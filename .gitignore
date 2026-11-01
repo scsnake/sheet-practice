@@ -1,0 +1,18 @@
+.venv/
+data/
+scores/
+__pycache__/
+*.pyc
+.DS_Store
+.claude/
+.agents/
+
+# Scores and derived files must never enter this repo (docs/SCORES.md).
+*.pdf
+*.musicxml
+*.mxl
+*.mscz
+*.mscx
+*.mid
+*.midi
+*.krn

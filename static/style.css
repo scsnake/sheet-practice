@@ -1,0 +1,141 @@
+:root {
+  --bg: #fafaf7;
+  --panel: #fff;
+  --ink: #222;
+  --muted: #777;
+  --accent: #2f6fed;
+  --loop: rgba(255, 200, 40, 0.28);
+  --loopEdge: rgba(230, 160, 0, 0.9);
+  --hover: rgba(47, 111, 237, 0.12);
+  --sel: rgba(230, 60, 60, 0.35);
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; background: var(--bg); color: var(--ink); font: 14px/1.4 -apple-system, "PingFang TC", "Noto Sans TC", system-ui, sans-serif; }
+body { display: flex; flex-direction: column; }
+#topbar { background: var(--panel); border-bottom: 1px solid #ddd; }
+.group { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+label { display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; }
+.btn { display: inline-flex; align-items: center; padding: 4px 10px; border: 1px solid #bbb; border-radius: 6px; background: #f4f4f4; cursor: pointer; font: inherit; color: inherit; text-decoration: none; -webkit-tap-highlight-color: transparent; }
+.btn.primary { background: var(--accent); color: #fff; border-color: var(--accent); }
+.btn.danger { color: #b00; }
+.btn.small { padding: 2px 8px; }
+.chip { padding: 2px 8px; border: 1px solid #ccc; border-radius: 12px; background: #fff; cursor: pointer; font: inherit; -webkit-tap-highlight-color: transparent; }
+/* 滑鼠停在上面才變色：iPad 沒有滑鼠，點過的按鈕不會一直灰著 */
+@media (hover: hover) {
+  .btn:hover { background: #e9e9e9; }
+  .btn.primary:hover { background: #245bd0; }
+  .chip:hover { background: #eee; }
+}
+.chip.on { border-color: var(--accent); background: #eef3ff; color: #1b48a8; }   /* ½ ¾ 原速：目前的速度，和練習聲部同一種藍 */
+/* 按下去一律變深，點了馬上看得到有反應 */
+.btn:active { background: #dcdcdc; }
+.btn.primary:active { background: #1e4fb8; }
+.chip:active { background: #e2e2e2; }
+.num { width: 60px; }
+.muted { color: var(--muted); }
+select { font: inherit; max-width: 260px; }
+input[type=range] { width: 120px; }
+.status { padding: 6px 12px; background: #fff7d6; border-bottom: 1px solid #e8d78a; }
+.status.error { background: #ffe1e1; border-color: #e0a0a0; }
+.hidden { display: none !important; }
+#main { display: flex; flex: 1; min-height: 0; }
+#scoreWrap { position: relative; flex: 1; overflow: auto; overflow-anchor: none; padding: 8px 16px; }
+#score { position: relative; }
+#overlay { position: absolute; inset: 8px 16px; pointer-events: none; }
+#overlay .loop { position: absolute; background: var(--loop); border-top: 2px solid var(--loopEdge); border-bottom: 2px solid var(--loopEdge); }
+#overlay .hover { position: absolute; background: var(--hover); border-radius: 3px; }
+#overlay .sel { position: absolute; background: var(--sel); border-radius: 50%; }
+#overlay .mnum { position: absolute; font-size: 10px; color: var(--muted); }
+#scoreWrap.edit { cursor: crosshair; }
+#pages { width: 38%; max-width: 640px; overflow: auto; border-left: 1px solid #ddd; background: #eee; padding: 8px; }
+#pages img { width: 100%; display: block; margin-bottom: 8px; box-shadow: 0 1px 4px rgba(0,0,0,.2); }
+#pages h4 { margin: 4px 0; color: var(--muted); font-weight: normal; }
+dialog { border: 1px solid #ccc; border-radius: 8px; max-width: 560px; }
+dialog ul { padding-left: 18px; }
+.errbar { background: #ffe8e8; border-color: #e8a0a0; display: flex; gap: 8px; align-items: center; }
+#overlay .err { position: absolute; background: rgba(230, 40, 40, 0.22); border: 1px solid rgba(200, 0, 0, 0.7); border-radius: 3px; }
+#overlay .err.empty { background: rgba(255, 120, 180, 0.15); border-color: rgba(220, 80, 140, 0.6); }
+#overlay .err::after { content: attr(data-label); position: absolute; right: 2px; top: -14px; font-size: 10px; color: #b00; background: rgba(255,255,255,.85); padding: 0 3px; border-radius: 2px; white-space: nowrap; }
+#overlay .click { position: absolute; border-top: 3px dotted rgba(60, 160, 60, 0.9); }
+#overlay .mine { position: absolute; background: rgba(47, 111, 237, 0.10); border-radius: 2px; }
+.ranges { display: inline-flex; gap: 4px; flex-wrap: wrap; }
+.ranges .chip { padding: 0 6px; }
+.ranges .chip b { cursor: pointer; margin-left: 4px; color: #b00; }
+.partrow { display: inline-flex; align-items: center; gap: 4px; padding: 2px 8px; border: 1px solid #ddd; border-radius: 14px; background: #fff; }
+.partrow.practice { border-color: var(--accent); background: #eef3ff; }
+#manageTable { border-collapse: collapse; }
+#manageTable td, #manageTable th { padding: 3px 6px; border-bottom: 1px solid #eee; text-align: left; }
+#manageTable input[type=text] { width: 140px; }
+#manageTable input[type=number] { width: 50px; }
+#overlay .skip { position: absolute; background: repeating-linear-gradient(135deg, rgba(120,120,120,0.18) 0 6px, rgba(120,120,120,0.05) 6px 12px); }
+#overlay .skip::after { content: attr(data-label); position: absolute; left: 3px; top: -14px; font-size: 10px; color: #666; }
+input.bad { outline: 2px solid #d33; }
+#score .view { display: none; }
+#score .view.rendering { display: block; position: absolute; top: 0; left: 0; right: 0; visibility: hidden; pointer-events: none; }
+#score .view.active { display: block; position: static; visibility: visible; }
+/* 捲動模式：塊（每塊一個 OSMD）由上到下接在一起。游標是塊裡的絕對定位元素，所以塊要 position: relative */
+#score.scroll { display: flow-root; padding-bottom: 60vh; }
+#score.scroll .view { display: block; position: relative; }
+#score.scroll .view.rendering { position: absolute; top: 0; left: 0; right: 0; visibility: hidden; pointer-events: none; }
+#score.scroll .view.cut { overflow: hidden; }
+#score.scroll .view.section-start { margin-top: 44px; }
+#overlay .sectitle { position: absolute; font-weight: 600; color: var(--muted); white-space: nowrap; }
+
+/* ---------- 工具列：兩列固定，蓋在樂譜上，沒用到就往上收起 ---------- */
+#headerStack { position: fixed; left: 0; right: 0; top: 0; z-index: 20; transition: transform .28s ease; }
+#headerStack.away { transform: translateY(-100%); }
+/* 修正音符時工具列不蓋住樂譜（要點得到最上面的音符），改成佔位置 */
+body.editing #headerStack { position: static; transform: none; }
+body.editing #peekTab, body.editing #nowChip { display: none; }
+#topbar { display: block; padding: 0; box-shadow: 0 2px 10px rgba(0, 0, 0, .07); }
+/* 不能 overflow: hidden：練習／設定面板是從列裡往下彈出的，會被裁掉 */
+.tbrow { display: flex; align-items: center; gap: 8px; row-gap: 6px; padding: 5px 12px; min-height: 38px; flex-wrap: wrap; }
+/* 視窗窄（iPad 直向）就換行，按鈕本身不折字、不被壓扁；練習／設定兩顆一起換行，換到下一行時也靠右 */
+.tbrow .btn, .tbrow .chips, .tbrow label { flex-shrink: 0; white-space: nowrap; }
+.tbrow > .menus { display: flex; gap: 8px; margin-left: auto; }
+@media (max-width: 1260px) { #sectionSelect { max-width: 210px; } }   /* iPad 橫向：第一列剛好放得下，最長的樂章名稱也不截斷 */
+.tbrow + .tbrow { border-top: 1px solid #eee; }
+.tbrow .grow { flex: 1; }
+.sep { width: 1px; align-self: stretch; background: #e3e3e3; }
+/* 固定寬度的讀數：數字等寬，樂章名稱太長就截斷，旁邊的東西不會被推走 */
+.readout { font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.readout.pct { width: 4.5ch; display: inline-block; text-align: right; }
+.readout.tempo { width: 24ch; }   /* 放得下「第 4 樂章 第 300 小節 ♩=144」 */
+.readout.win { width: 16ch; display: inline-block; }   /* 最長「第 4 樂章 288–309」 */
+#peekTab { position: fixed; top: 0; left: 50%; transform: translateX(-50%); z-index: 19; font: inherit; font-size: 11px;
+  color: var(--muted); background: rgba(255, 255, 255, .92); border: 1px solid #ddd; border-top: 0; border-radius: 0 0 8px 8px;
+  padding: 1px 10px; cursor: pointer; opacity: 0; transition: opacity .2s; pointer-events: none; }
+#headerStack.away + #peekTab { opacity: 1; pointer-events: auto; }
+#nowChip { position: fixed; top: 6px; right: 14px; z-index: 18; font-variant-numeric: tabular-nums; font-size: 13px;
+  color: #1b48a8; background: rgba(238, 243, 255, .95); border: 1px solid #ccd6ee; border-radius: 14px; padding: 2px 12px; cursor: pointer; }
+/* iPad：沒有滑鼠可以移到上緣，上緣標籤和右上角的位置是叫出工具列的方法，要大到手指點得中 */
+@media (pointer: coarse) {
+  #peekTab { font-size: 14px; padding: 8px 22px; min-height: 36px; }
+  #nowChip { padding: 8px 14px; border-radius: 18px; }
+}
+/* iPad：按鈕、勾選框放大到手指點得中（約 40px 高），Mac 的外觀不變。
+   聲部膠囊：名稱那一段撐滿整個高度，點膠囊右半邊的空白也算點到名稱（設為練習聲部） */
+@media (pointer: coarse) {
+  .btn, .chip, select, input[type=text], input[type=number] { min-height: 40px; }
+  .btn.small, .chip { padding: 2px 12px; }
+  .chip { display: inline-flex; align-items: center; border-radius: 20px; }   /* 拍點區段的 chip 是 span，拉高後文字要置中 */
+  input[type=checkbox] { width: 22px; height: 22px; }
+  label:has(> input[type=checkbox]) { min-height: 40px; }
+  .partrow { padding: 0 0 0 10px; border-radius: 21px; }
+  .partrow > span { padding: 10px 14px 10px 4px; }
+}
+/* 練習 / 設定 面板 */
+.pop { position: relative; }
+.pop > .panel { display: none; position: absolute; z-index: 21; top: calc(100% + 6px); right: 0; width: 520px; max-width: 94vw;
+  background: var(--panel); border: 1px solid #bbb; border-radius: 10px; box-shadow: 0 10px 30px rgba(0, 0, 0, .18); padding: 8px 12px 12px; }
+.pop.open > .panel { display: block; }
+.pop .panel .line { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 5px 0; }
+.pop .panel .line + .line { border-top: 1px solid #f4f4f4; }
+.pop .panel h4 { margin: 8px 0 2px; font-size: 12px; color: var(--muted); font-weight: 600; }
+
+/* ---------- 橫向模式（實驗）：整份譜排成一行，時間往右走 ---------- */
+#scoreWrap.horiz { overflow-x: auto; overflow-y: auto; }
+#score.horiz { display: flex; flex-direction: row; align-items: flex-start; padding-bottom: 0; padding-right: 60vw; }
+#score.horiz .view { flex: 0 0 auto; width: max-content; }
+#score.horiz .view.rendering { position: absolute; top: 0; left: 0; right: auto; }
+#score.horiz .view.section-start { margin-top: 0; margin-left: 40px; }

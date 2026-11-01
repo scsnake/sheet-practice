@@ -1,0 +1,174 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>分譜跟奏練習</title>
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<div id="headerStack">
+<header id="topbar">
+  <div class="tbrow">
+    <button id="btnPlay" class="btn primary" title="播放 / 暫停（空白鍵）">▶ 播放</button>
+    <button id="btnStop" class="btn" title="停止（停在目前位置；Home 鍵回到起點）">■</button>
+    <span class="sep"></span>
+    <label>速度 <input id="bpm" type="range" min="20" max="150" value="100"> <span id="bpmVal" class="readout pct">100%</span></label>
+    <span class="chips">
+      <button class="chip" data-speed="0.5">½</button>
+      <button class="chip" data-speed="0.75">¾</button>
+      <button class="chip" data-speed="1">原速</button>
+    </span>
+    <span class="sep"></span>
+    <span id="tempoNow" class="muted readout tempo"></span>
+    <label class="hidden"><select id="sectionSelect" title="跳到樂章開頭" aria-label="樂章"></select></label>
+    <label title="輸入小節號跳過去：12 = 本樂章第 12 小節；3:12 = 第 3 樂章第 12 小節；#500 = 全曲第 500 小節；Enter 執行">跳至 <input id="gotoBar" type="text" class="num" placeholder="小節" size="6"></label>
+    <span class="grow"></span>
+    <span class="menus">
+    <span class="pop" data-pop="practice">
+      <button class="btn" data-poptoggle>練習 ▾</button>
+      <div class="panel">
+        <h4>反覆區段</h4>
+        <div class="line">
+          <label><input id="loopOn" type="checkbox"> 循環</label>
+          <label>小節 <input id="loopStart" type="number" min="1" value="1" class="num"> – <input id="loopEnd" type="number" min="1" value="1" class="num"></label>
+          <button id="setStart" class="btn small" title="以目前位置為起點（[ 鍵）">起點=此處</button>
+          <button id="setEnd" class="btn small" title="以目前位置為終點（] 鍵）">終點=此處</button>
+          <button id="clearLoop" class="btn small" title="清除區段">清除</button>
+        </div>
+        <h4>拍點</h4>
+        <div class="line">
+          <select id="clickMode" title="節拍器：關 / 全曲 / 只在指定區段（例如切分音伴奏段）">
+            <option value="off">關</option><option value="all">全曲</option><option value="ranges">指定區段</option>
+          </select>
+          <span id="clickRanges" class="ranges"></span>
+          <button id="addClickRange" class="btn small" title="把目前循環區段（或目前小節）加入拍點區段">＋區段</button>
+          <label><input id="countIn" type="checkbox" checked> 預備拍</label>
+        </div>
+        <h4>跳過長休止</h4>
+        <div class="line">
+          <label title="所有非獨奏聲部（弦樂）都休息超過 N 小節的段落，播放時直接跳過"><input id="skipSolo" type="checkbox"> 開啟</label>
+          <label>超過 <input id="skipMin" type="number" min="1" value="8" class="num"> 小節</label>
+          <label>保留最後 <input id="skipKeep" type="number" min="0" value="2" class="num"> 小節提示</label>
+          <span id="skipInfo" class="muted"></span>
+        </div>
+      </div>
+    </span>
+    <span class="pop" data-pop="settings">
+      <button class="btn" data-poptoggle>設定 ▾</button>
+      <div class="panel">
+        <h4>作品</h4>
+        <div class="line">
+          <select id="workSelect" title="選擇作品"></select>
+          <button id="btnUpload" class="btn small" title="上傳分譜（PDF / 圖片 / MusicXML）">＋ 上傳分譜</button>
+          <button id="btnManage" class="btn small" title="管理作品與聲部">管理</button>
+          <a id="downloadXml" class="btn small" href="#" download title="下載目前作品的 MusicXML">⬇ MusicXML</a>
+        </div>
+        <h4>聲音</h4>
+        <div class="line">
+          <label>音量 <input id="volume" type="range" min="0" max="1" step="0.05" value="0.8"></label>
+          <label title="標準音 A4 的頻率">A= <input id="tuning" type="number" min="400" max="480" value="442" class="num"> Hz</label>
+          <label><input id="panning" type="checkbox" checked> 立體聲分佈</label>
+        </div>
+        <div class="line">
+          <label>音色 <select id="soundMode" title="對和聲時建議用純音或風琴（沒有抖音、音高穩定）">
+            <option value="pure" selected>純音（正弦＋泛音）</option>
+            <option value="strings">弦樂（獨奏取樣，有抖音）</option>
+            <option value="ensemble">弦樂合奏（慢弦）</option>
+            <option value="organ">管風琴</option>
+            <option value="reed">簧風琴</option>
+          </select></label>
+        </div>
+        <h4>檢視</h4>
+        <div class="line">
+          <label>縮放 <button id="zoomOut" class="btn small">－</button><span id="zoomVal">100%</span><button id="zoomIn" class="btn small">＋</button></label>
+          <label title="橫向模式播放時，樂譜怎麼跟著游標移動（實驗）">橫向跟隨 <select id="hFollow">
+            <option value="step">逐小節</option><option value="smooth">連續</option><option value="jump">整頁跳</option><option value="half">半頁跳</option>
+          </select></label>
+          <label><input id="editMode" type="checkbox"> 修正音符</label>
+          <label><input id="showPages" type="checkbox"> 原始掃描</label>
+          <button id="btnHelp" class="btn small" title="快捷鍵說明">? 快捷鍵</button>
+        </div>
+      </div>
+    </span>
+    </span>
+  </div>
+  <div class="tbrow">
+    <div class="group" id="partsGroup"></div>
+    <span class="grow"></span>
+    <label>顯示 <select id="displayMode" title="捲動：樂譜連續往下捲；橫向：排成一行往右走，不用上下捲；翻頁：一次顯示一頁"><option value="scroll">捲動</option><option value="horizontal">橫向</option><option value="page">翻頁</option></select><button id="pagePrev" class="btn small" title="上一頁／往上捲一個畫面（PageUp）">◀</button><span id="winLabel" class="muted readout win"></span><button id="pageNext" class="btn small" title="下一頁／往下捲一個畫面（PageDown）">▶</button></label>
+  </div>
+</header>
+
+<div id="status" class="status hidden"></div>
+<div id="errorBar" class="status errbar hidden">
+  <span id="errorSummary"></span>
+  <button id="prevErr" class="btn small" title="上一個拍數不符的小節">◀</button>
+  <button id="nextErr" class="btn small" title="下一個拍數不符的小節">▶</button>
+  <label><input id="errMineOnly" type="checkbox"> 只看練習聲部</label>
+</div>
+<div id="editHint" class="status hidden">
+  修正模式：點選音符後 ↑/↓ 半音、Shift+↑/↓ 八度、Delete 改休止符、Shift+Delete 刪除、N 休止符改音符、
+  W/H/Q/E/S/T 全/二分/四分/八分/十六/三十二分音、. 附點、Shift+T 設定此小節起的拍號、I 在此小節後插入空小節、X 刪除此小節、Cmd/Ctrl+Z 復原。<span id="editStatus"></span>
+</div>
+</div>
+<button id="peekTab" title="顯示工具列（滑鼠移到畫面上緣也會出現）">▾ 工具列</button>
+<div id="nowChip" class="hidden" title="顯示工具列"></div>
+
+<main id="main">
+  <div id="scoreWrap">
+    <div id="score"></div>
+    <div id="overlay"></div>
+  </div>
+  <aside id="pages" class="hidden"></aside>
+</main>
+
+<dialog id="uploadDlg">
+  <h3>上傳分譜</h3>
+  <p><label>檔案 <input id="fileInput" type="file" accept=".pdf,.png,.jpg,.jpeg,.tif,.tiff,.bmp,.webp,.musicxml,.xml,.mxl"></label></p>
+  <p><label>作品名稱 <input id="upWork" type="text" list="workNames" placeholder="例如 弦樂四重奏 第 1 號" size="28"></label>
+     <datalist id="workNames"></datalist></p>
+  <p><label>聲部名稱 <input id="upPart" type="text" list="partNames" placeholder="例如 Violin II" size="28"></label>
+     <datalist id="partNames"><option value="Violin I"><option value="Violin II"><option value="Viola"><option value="Cello"><option value="Contrabass"></datalist></p>
+  <p class="muted">同一「作品名稱」下的多個分譜會合併成一份多聲部總譜（例如四重奏四行）。</p>
+  <form method="dialog"><button class="btn" value="cancel">取消</button> <button id="doUpload" class="btn primary" value="ok">上傳並辨識</button></form>
+</dialog>
+
+<dialog id="manageDlg">
+  <h3>管理作品與聲部</h3>
+  <p class="muted">修改「作品」欄位可以把分譜歸到別的作品；「順序」決定總譜由上到下的排列。</p>
+  <table id="manageTable"><thead><tr><th>作品</th><th>聲部</th><th>順序</th><th>小節</th><th>狀態</th><th></th></tr></thead><tbody></tbody></table>
+  <form method="dialog"><button class="btn">關閉</button></form>
+</dialog>
+
+<dialog id="help">
+  <h3>快捷鍵</h3>
+  <ul>
+    <li><b>空白鍵</b> 播放 / 暫停　<b>Home</b> 回到起點（或區段起點）</li>
+    <li><b>← / →</b> 上一小節 / 下一小節　<b>PageUp / PageDown</b> 翻頁模式：前後一頁；捲動模式：捲一個畫面（播放中自己捲動會暫停跟隨，按播放或跳小節恢復）</li>
+    <li><b>工具列</b> 沒用到會往上收起；滑鼠移到畫面上緣（或按上緣的小標籤）叫出來，按播放時立刻收起。收起時右上角顯示樂章、小節與拍數</li>
+    <li><b>點擊小節</b> 跳到該小節　<b>Shift+點擊</b> 設為區段起點　<b>Alt+點擊</b> 設為區段終點</li>
+    <li><b>[</b> / <b>]</b> 以目前小節設為區段起點 / 終點　<b>L</b> 開關循環</li>
+    <li><b>+ / −</b> 速度 ±5%　<b>M</b> 拍點 關 / 全曲 / 指定區段</li>
+    <li><b>E</b> / <b>Shift+E</b> 下一個 / 上一個「拍數不符」小節</li>
+    <li><b>Esc</b> 取消選取 / 離開修正模式</li>
+  </ul>
+  <p>紅色小節 = 該聲部的音符時值加總與拍號不符，很可能是辨識錯誤；粉紅 = 空小節。紅色小節在播放時會被拉長到最長聲部的長度，各聲部在該小節內對不齊，修正後即恢復。</p>
+  <p>各聲部小節數不一致多半是「多小節休止」只被認成一小節：在修正模式選該小節的休止符，按 <b>I</b> 補上缺的小節數；多認的小節用 <b>X</b> 刪除。可用拍號變換（樂章交界）核對各聲部是否對齊。</p>
+  <p>辨識錯誤較多時：下載 MusicXML → 用 MuseScore Studio 修正 → 另存 MusicXML → 重新上傳（同作品、同聲部名稱）。</p>
+  <form method="dialog"><button class="btn">關閉</button></form>
+</dialog>
+
+<script src="/static/vendor/opensheetmusicdisplay.min.js"></script>
+<script src="/static/vendor/WebAudioFontPlayer.js"></script>
+<script src="/static/vendor/0400_FluidR3_GM_sf2_file.js"></script>
+<script src="/static/vendor/0410_FluidR3_GM_sf2_file.js"></script>
+<script src="/static/vendor/0420_FluidR3_GM_sf2_file.js"></script>
+<script src="/static/vendor/0430_FluidR3_GM_sf2_file.js"></script>
+<script src="/static/vendor/0000_FluidR3_GM_sf2_file.js"></script>
+<script src="/static/vendor/0190_FluidR3_GM_sf2_file.js"></script>
+<script src="/static/vendor/0200_FluidR3_GM_sf2_file.js"></script>
+<script src="/static/vendor/0490_FluidR3_GM_sf2_file.js"></script>
+<script src="/static/app.js"></script>
+</body>
+</html>
