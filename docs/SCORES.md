@@ -79,6 +79,23 @@ Scores go in the folder that `SP_DATA_DIR` names. The default is `data/`.
 
 5. Start the app and open the work. Look for red bars and pink bars.
 
+## Import in the browser
+
+The app can do steps 2–4 for you.
+
+1. Open 設定 ▾, then click ＋ 上傳分譜.
+2. Select one or more `.musicxml`, `.xml` or `.mxl` files, or a `.zip` that contains them.
+   Each file is one movement.
+3. In the next dialog, set the movement order, the parts to import and their names.
+4. Fill in 授權 and 來源 if the file does not have them.
+5. Click 匯入. The dialog shows the `prepare.py` report, and the work opens.
+
+A part comes only from the files that contain it.
+Thus a folder with one file per movement and per instrument also works.
+A part that is in fewer files than the others gets fewer bars. The dialog shows a warning.
+
+The app ignores other files in a ZIP, such as `__MACOSX/` and text files.
+
 ## Scanned PDFs
 
 PDF recognition needs the homr models. Download them once with `uv run homr --init`.

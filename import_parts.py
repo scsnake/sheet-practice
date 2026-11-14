@@ -17,13 +17,12 @@ import json
 import re
 import sys
 import tempfile
-import zipfile
 from pathlib import Path
 
 from lxml import etree
 
 import omr
-from xmlsafe import PARSER
+from xmlsafe import PARSER, read_mxl
 
 # 預設要抽的弦樂聲部：總譜 part-name 的樣式 → 顯示名稱、順序
 STRING_PARTS = [
@@ -37,10 +36,7 @@ STRING_PARTS = [
 
 def load_root(path: Path):
     if path.suffix.lower() == ".mxl":
-        with zipfile.ZipFile(path) as z:
-            container = etree.fromstring(z.read("META-INF/container.xml"), PARSER)
-            rootfile = container.find(".//rootfile").get("full-path")
-            return etree.fromstring(z.read(rootfile), PARSER)
+        return etree.fromstring(read_mxl(path), PARSER)
     return etree.parse(str(path), PARSER).getroot()
 
 

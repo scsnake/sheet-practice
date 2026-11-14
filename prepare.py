@@ -45,7 +45,10 @@ def measure_plan(part):
                 div = int(d)
             t = a.find("time")
             if t is not None:
-                beats, bt = int(t.findtext("beats")), int(t.findtext("beat-type"))
+                try:
+                    beats, bt = int(t.findtext("beats")), int(t.findtext("beat-type"))
+                except (TypeError, ValueError):
+                    pass  # 例如 "3+2"：沿用前一個拍號（和 timeline.py、omr.py 一樣）
         out.append(int(round(div * 4 * beats / bt)))
     return out
 
@@ -112,10 +115,11 @@ def strip_duplicate_tempo(carrier_texts: dict[int, set], part) -> int:
     return removed
 
 
-def check_work(work_slug: str, fix: bool) -> int:
+def check_work(work_slug: str, fix: bool, out=print) -> int:
+    """檢查一個作品，回傳問題數。out 收到每一行報告（預設印出來；伺服器用它把報告回傳給網頁）。"""
     pieces = works.pieces_of(work_slug)
     if not pieces:
-        print(f"  {work_slug}: 沒有分譜")
+        out(f"  {work_slug}: 沒有分譜")
         return 1
     pieces = sorted(pieces, key=lambda pm: pm[1].get("order", 0))
     info = []
@@ -127,15 +131,15 @@ def check_work(work_slug: str, fix: bool) -> int:
     problems = 0
     bars = {i["bars"] for i in info}
     if len(bars) > 1:
-        print(f"  ✗ 各聲部小節數不一致：" + "、".join(f"{i['meta'].get('part')} {i['bars']}" for i in info))
+        out(f"  ✗ 各聲部小節數不一致：" + "、".join(f"{i['meta'].get('part')} {i['bars']}" for i in info))
         problems += 1
     for i in info:
         bad = over_full(i["part"])
         if bad:
-            print(f"  ✗ {i['meta'].get('part')}：{len(bad)} 個小節的音符超出小節長度（前幾個：{bad[:6]}）")
+            out(f"  ✗ {i['meta'].get('part')}：{len(bad)} 個小節的音符超出小節長度（前幾個：{bad[:6]}）")
             problems += 1
         if i["notes"] == 0:
-            print(f"  ✗ {i['meta'].get('part')}：整個聲部沒有音高")
+            out(f"  ✗ {i['meta'].get('part')}：整個聲部沒有音高")
             problems += 1
 
     # 速度文字：只有第一個聲部需要，其他重複的會疊在畫面上
@@ -154,16 +158,16 @@ def check_work(work_slug: str, fix: bool) -> int:
             for i, _ in dupes:
                 removed = strip_duplicate_tempo(carrier_texts, i["part"])
                 works.write_piece_score(i["dir"], etree.tostring(i["root"], xml_declaration=True, encoding="UTF-8", pretty_print=True))
-                print(f"  ✓ {i['meta'].get('part')}：拿掉 {removed} 個重複的速度文字（原檔備份在 backups/）")
+                out(f"  ✓ {i['meta'].get('part')}：拿掉 {removed} 個重複的速度文字（原檔備份在 backups/）")
         else:
-            print(f"  ! 速度文字重複 {total} 個（{where}）— 用 --fix 只留第一個聲部的文字，速度值不動")
+            out(f"  ! 速度文字重複 {total} 個（{where}）— 用 --fix 只留第一個聲部的文字，速度值不動")
             problems += 1
     missing = [i["meta"].get("part") for i in info
                if not all((i["meta"].get(k) or omr.provenance(i["root"]).get(k)) for k in ("rights", "source"))]
     if missing:
-        print(f"  ! 沒有授權或來源記錄：{'、'.join(str(m) for m in missing)}（見 docs/SCORES.md）")
+        out(f"  ! 沒有授權或來源記錄：{'、'.join(str(m) for m in missing)}（見 docs/SCORES.md）")
     if not problems:
-        print(f"  ✓ {len(info)} 個聲部、{info[0]['bars']} 小節，沒有發現問題")
+        out(f"  ✓ {len(info)} 個聲部、{info[0]['bars']} 小節，沒有發現問題")
     return problems
 
 

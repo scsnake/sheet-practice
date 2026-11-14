@@ -9,6 +9,7 @@ if curl -s -o /dev/null http://localhost:8777/; then
   exit 2
 fi
 uv run --group dev python tests/test_reduce_orchestra.py || exit 2
+uv run --group dev python tests/test_score_upload.py || exit 2
 SP_DATA_DIR=$(mktemp -d)
 export SP_DATA_DIR
 uv run --group dev python tests/fixtures/make_demo.py || exit 2

@@ -46,6 +46,7 @@ You need Python 3.12 or later and [uv](https://docs.astral.sh/uv/).
 ## Add your own scores
 
 1. Read [docs/SCORES.md](docs/SCORES.md).
+   To import MusicXML, MXL or ZIP files in the browser, see "Import in the browser" there.
 2. If you use a coding agent, tell it to follow [AGENTS.md](AGENTS.md). It can search the listed sources with you and run the preparation steps.
 
 ## Keep your scores outside the repo

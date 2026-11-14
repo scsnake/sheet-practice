@@ -67,6 +67,20 @@ dialog ul { padding-left: 18px; }
 #manageTable td, #manageTable th { padding: 3px 6px; border-bottom: 1px solid #eee; text-align: left; }
 #manageTable input[type=text] { width: 140px; }
 #manageTable input[type=number] { width: 50px; }
+#importDlg { max-width: 760px; width: calc(100vw - 32px); }
+#importDlg h4 { margin: 12px 0 4px; }
+#imFiles { max-height: 30vh; overflow: auto; margin: 0; padding-left: 28px; }
+#imFiles li { display: flex; align-items: center; gap: 6px; padding: 2px 0; }
+#imFiles li .label { flex: 1; overflow-wrap: anywhere; }
+#imFiles li.bad .label { color: #b00; }
+#imFiles li .btn { padding: 0 8px; }
+#imParts { border-collapse: collapse; }
+#imParts td, #imParts th { padding: 3px 6px; border-bottom: 1px solid #eee; text-align: left; }
+#imParts tr.partial td:nth-child(3) { color: #b60; font-weight: 600; }
+#imParts input[type=text] { width: 160px; }
+.warn { color: #b60; white-space: pre-line; }
+.warn:empty { display: none; }
+#imReport { white-space: pre-wrap; max-height: 50vh; overflow: auto; background: #f6f6f2; padding: 8px; border-radius: 6px; }
 #overlay .skip { position: absolute; background: repeating-linear-gradient(135deg, rgba(120,120,120,0.18) 0 6px, rgba(120,120,120,0.05) 6px 12px); }
 #overlay .skip::after { content: attr(data-label); position: absolute; left: 3px; top: -14px; font-size: 10px; color: #666; }
 input.bad { outline: 2px solid #d33; }

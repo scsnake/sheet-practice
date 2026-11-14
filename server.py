@@ -14,9 +14,11 @@ from pathlib import Path
 from fastapi import FastAPI, Form, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.middleware.gzip import GZipMiddleware
+from pydantic import BaseModel
 from fastapi.staticfiles import StaticFiles
 
 import omr
+import score_upload
 import works
 
 ROOT = Path(__file__).parent
@@ -204,6 +206,49 @@ def page_image(piece_id: str, name: str):
     if not f.exists():
         raise HTTPException(404)
     return FileResponse(f)
+
+
+# ---------- 總譜匯入（MusicXML / MXL / ZIP → 選聲部 → import_parts） ----------
+
+
+@app.post("/api/score-uploads")
+def stage_score_upload(files: list[UploadFile]):
+    """收下一個或多個 MusicXML / MXL / ZIP，回傳每個檔案的聲部，讓使用者選。"""
+    try:
+        return score_upload.stage([(f.filename or "", f.file) for f in files])
+    except ValueError as e:
+        raise HTTPException(400, str(e)) from None
+
+
+class ImportPart(BaseModel):
+    name: str
+    display: str
+
+
+class ImportRequest(BaseModel):
+    work: str
+    order: list[str]
+    parts: list[ImportPart]
+    rights: str = ""
+    source: str = ""
+
+
+@app.post("/api/score-uploads/{token}/import")
+def run_score_import(token: str, req: ImportRequest):
+    try:
+        return score_upload.run_import(token, req.work, req.order, [p.model_dump() for p in req.parts],
+                                       req.rights, req.source)
+    except ValueError as e:
+        raise HTTPException(400, str(e)) from None
+
+
+@app.delete("/api/score-uploads/{token}")
+def discard_score_upload(token: str):
+    try:
+        score_upload.discard(token)
+    except ValueError as e:
+        raise HTTPException(404, str(e)) from None
+    return {"ok": True}
 
 
 @app.get("/")

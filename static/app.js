@@ -217,7 +217,12 @@
   });
   $("doUpload").addEventListener("click", async (e) => {
     e.preventDefault();
-    const f = $("fileInput").files[0]; if (!f) { alert("請選擇檔案"); return; }
+    const all = [...$("fileInput").files]; if (!all.length) { alert("請選擇檔案"); return; }
+    // MusicXML / MXL / ZIP：先列出聲部讓使用者選（可多檔）。PDF / 圖片：照舊一次一個，走 OMR
+    const isScore = (f) => /\.(musicxml|xml|mxl|zip)$/i.test(f.name);
+    if (all.every(isScore)) { $("uploadDlg").close(); stageScores(all); return; }
+    if (all.length > 1) { alert("PDF／圖片一次只能上傳一個檔案；MusicXML／MXL／ZIP 才可以一次選多個"); return; }
+    const f = all[0];
     const fd = new FormData(); fd.append("file", f); fd.append("work", $("upWork").value); fd.append("part", $("upPart").value);
     $("uploadDlg").close();
     setStatus(`上傳中：${f.name}`);
@@ -226,6 +231,116 @@
       await refreshWorks(r.slug);
       if (r.slug === S.slug) loadWork(r.slug, true);
     } catch (err) { setStatus("上傳失敗：" + err.message, true); }
+  });
+
+  // ---------- 總譜匯入：上傳 → 選聲部 → 匯入 ----------
+  const IM = { token: null, files: [], parts: [], done: false, busy: false, conflict: {} };
+  const apiError = (err) => {   // 伺服器回 {"detail": "..."}：只顯示說明文字
+    const m = /^\d+ (.*)$/s.exec(err.message);
+    try { return JSON.parse(m[1]).detail || err.message; } catch { return err.message; }
+  };
+  async function stageScores(fileList) {
+    const fd = new FormData();
+    for (const f of fileList) fd.append("files", f);
+    setStatus(`上傳中：${fileList.length} 個檔案`);
+    let r;
+    try { r = await api("/api/score-uploads", { method: "POST", body: fd }); }
+    catch (err) { setStatus("上傳失敗：" + apiError(err), true); return; }
+    setStatus("");
+    Object.assign(IM, { token: r.token, files: r.files, parts: r.parts, done: false, busy: false,
+      conflict: { rights: r.rights_conflict, source: r.source_conflict } });
+    // 只有一個聲部時，上傳視窗填的聲部名稱優先
+    if (r.parts.length === 1 && $("upPart").value.trim()) r.parts[0].display = $("upPart").value.trim();
+    $("imWork").value = $("upWork").value.trim() || r.work || fileList[0].name.replace(/\.[^.]+$/, "");
+    $("imRights").value = r.rights || ""; $("imSource").value = r.source || "";
+    $("imSkipped").textContent = r.skipped.length ? `略過 ${r.skipped.length} 個不是樂譜的檔案：${r.skipped.slice(0, 5).join("、")}${r.skipped.length > 5 ? "…" : ""}` : "";
+    renderImport();
+    $("importDlg").showModal();
+  }
+  function usableFiles() { return IM.files.filter((f) => !f.error); }
+  function renderImport() {
+    const ol = $("imFiles"); ol.innerHTML = "";
+    IM.files.forEach((f, i) => {
+      const li = document.createElement("li"); li.classList.toggle("bad", !!f.error);
+      const label = document.createElement("span"); label.className = "label";
+      label.textContent = f.error ? `${f.label}（${f.error}）` : `${f.label}（${f.parts.length} 個聲部）`;
+      const up = document.createElement("button"); up.className = "btn"; up.textContent = "↑"; up.title = "往前移"; up.disabled = i === 0;
+      const down = document.createElement("button"); down.className = "btn"; down.textContent = "↓"; down.title = "往後移"; down.disabled = i === IM.files.length - 1;
+      const move = (j) => { const t = IM.files[i]; IM.files[i] = IM.files[j]; IM.files[j] = t; renderImport(); };
+      up.addEventListener("click", (e) => { e.preventDefault(); move(i - 1); });
+      down.addEventListener("click", (e) => { e.preventDefault(); move(i + 1); });
+      li.append(label, up, down); ol.appendChild(li);
+    });
+    const most = Math.max(0, ...IM.parts.map((p) => p.files.length));
+    const tb = $("imParts").querySelector("tbody"); tb.innerHTML = "";
+    for (const p of IM.parts) {
+      const tr = document.createElement("tr"); tr.classList.toggle("partial", p.files.length < most);
+      const cb = document.createElement("input"); cb.type = "checkbox"; cb.checked = p.selected;
+      cb.addEventListener("change", () => { p.selected = cb.checked; checkImport(); });
+      const disp = document.createElement("input"); disp.type = "text"; disp.value = p.display;
+      disp.addEventListener("input", () => { p.display = disp.value; checkImport(); });
+      const cells = [cb, p.name + (p.duplicate ? "（同一檔裡有同名聲部：只取第一個）" : ""), `${p.files.length}／${usableFiles().length}`, disp];
+      for (const c of cells) { const td = document.createElement("td"); if (typeof c === "string") td.textContent = c; else td.appendChild(c); tr.appendChild(td); }
+      tr.dataset.name = p.name; tb.appendChild(tr);
+    }
+    checkImport();
+  }
+  function checkImport() {   // 回傳錯誤訊息（空字串 = 可以匯入）；警告只提醒，不擋
+    const warn = [], chosen = IM.parts.filter((p) => p.selected);
+    const most = Math.max(0, ...IM.parts.map((p) => p.files.length));
+    let error = "";
+    const fields = [["rights", "imRights", "授權"], ["source", "imSource", "來源"]];
+    // 各檔案寫的授權／來源不一樣：不能拿第一個檔的值套到全部聲部，要使用者自己填
+    const conflicts = fields.filter(([k, id]) => IM.conflict[k] && !$(id).value.trim());
+    const names = chosen.map((p) => p.display.trim().toLowerCase());
+    if (!$("imWork").value.trim()) error = "請填作品名稱";
+    else if (!chosen.length) error = "請至少選一個聲部";
+    else if (names.some((n) => !n)) error = "匯入後的聲部名稱不可以空白";
+    else if (new Set(names).size !== names.length) error = "匯入後的聲部名稱重複了";
+    else if (conflicts.length) {
+      const shown = usableFiles().slice(0, 6).map((f) => `  ${f.label}：${conflicts.map(([k]) => f[k] || "（沒寫）").join("／")}`);
+      error = `各檔案寫的${conflicts.map((c) => c[2]).join("、")}不一樣，請自己填一個值（或分開匯入）：\n` + shown.join("\n") + (usableFiles().length > 6 ? "\n  …" : "");
+    }
+    const partial = chosen.filter((p) => p.files.length < most);
+    if (partial.length) warn.push(`${partial.map((p) => p.name).join("、")} 只出現在部分檔案裡：小節數會和其他聲部不一樣，播放會對不齊。`);
+    const existing = [...$("workNames").options].some((o) => o.value === $("imWork").value.trim());
+    $("imWorkNote").textContent = existing ? "已經有這個作品：新聲部會加在現有聲部後面。要另外建一份，請換一個名稱。" : "";
+    if (!conflicts.length && (!$("imRights").value.trim() || !$("imSource").value.trim())) warn.push("沒有授權或來源記錄：請填上，並確認你可以使用這份樂譜（見 docs/SCORES.md）。");
+    $("imWarn").textContent = [error, ...warn].filter(Boolean).join("\n");
+    $("doImport").disabled = !!error || IM.busy;
+    return error;
+  }
+  for (const id of ["imWork", "imRights", "imSource"]) $(id).addEventListener("input", checkImport);
+  // 匯入進行中不能關掉視窗：關掉會刪暫存檔，伺服器可能讀到一半，或照樣匯入完成
+  $("importDlg").addEventListener("cancel", (e) => { if (IM.busy) e.preventDefault(); });
+  $("importDlg").addEventListener("close", () => {
+    if (IM.token && !IM.done && !IM.busy) api(`/api/score-uploads/${IM.token}`, { method: "DELETE" }).catch(() => {});
+    IM.token = null;
+  });
+  $("doImport").addEventListener("click", async (e) => {
+    e.preventDefault();
+    if (checkImport()) return;
+    const body = {
+      work: $("imWork").value.trim(), rights: $("imRights").value.trim(), source: $("imSource").value.trim(),
+      order: usableFiles().map((f) => f.id),
+      parts: IM.parts.filter((p) => p.selected).map((p) => ({ name: p.name, display: p.display.trim() })),
+    };
+    const setBusy = (on) => { IM.busy = on; $("doImport").disabled = on; $("importDlg").querySelector("button[value=cancel]").disabled = on; };
+    setBusy(true); setStatus(`匯入中：${body.parts.length} 個聲部…`);
+    let r;
+    try {
+      r = await api(`/api/score-uploads/${IM.token}/import`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
+    } catch (err) {
+      setBusy(false); setStatus("");
+      $("imWarn").textContent = "匯入失敗：" + apiError(err);
+      return;
+    }
+    IM.done = true; setBusy(false); $("importDlg").close(); setStatus("");
+    $("imDoneTitle").textContent = r.problems ? `匯入完成，但發現 ${r.problems} 個問題` : "匯入完成";
+    $("imReport").textContent = `${r.work}：${r.pieces.length} 個聲部${r.added_to_existing ? "（加在現有作品後面）" : ""}\n` + r.report.join("\n");
+    $("importDoneDlg").showModal();
+    await refreshWorks(r.slug);
+    if (r.slug === S.slug) loadWork(r.slug, true);
   });
 
   $("btnManage").addEventListener("click", async () => {

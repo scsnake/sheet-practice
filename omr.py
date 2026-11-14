@@ -17,12 +17,11 @@ import shutil
 import subprocess
 import sys
 import time
-import zipfile
 from pathlib import Path
 
 from lxml import etree
 
-from xmlsafe import PARSER
+from xmlsafe import PARSER, read_mxl
 
 # 資料夾可以放在 repo 外面：export SP_DATA_DIR=~/my-scores（預設是 repo 裡的 data/）
 DATA_DIR = Path(os.environ.get("SP_DATA_DIR") or Path(__file__).parent / "data").expanduser().resolve()
@@ -254,10 +253,7 @@ def import_xml_source(pdir: Path) -> None:
     """直接上傳 MusicXML / MXL 時：解壓（若需要）並存為 score.musicxml。"""
     src = next(p for p in pdir.iterdir() if p.stem == "source")
     if src.suffix.lower() == ".mxl":
-        with zipfile.ZipFile(src) as z:
-            container = etree.fromstring(z.read("META-INF/container.xml"), PARSER)
-            rootfile = container.find(".//rootfile").get("full-path")
-            data = z.read(rootfile)
+        data = read_mxl(src)
     else:
         data = src.read_bytes()
     (pdir / "score.musicxml").write_bytes(data)
