@@ -78,8 +78,6 @@ dialog ul { padding-left: 18px; }
 #emptyState .btn { font-size: 18px; padding: 10px 22px; }
 #emptyExamples { margin-top: 28px; }
 #emptyExamples .btn { font-size: 15px; padding: 6px 14px; }
-#importNote { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-#importNote #importNoteText { flex: 1; min-width: 200px; }
 #imFiles li .btn { padding: 0 8px; }
 #imParts { border-collapse: collapse; }
 #imParts td, #imParts th { padding: 3px 6px; border-bottom: 1px solid #eee; text-align: left; }
@@ -160,3 +158,32 @@ body.editing #peekTab, body.editing #nowChip { display: none; }
 #score.horiz .view { flex: 0 0 auto; width: max-content; }
 #score.horiz .view.rendering { position: absolute; top: 0; left: 0; right: auto; }
 #score.horiz .view.section-start { margin-top: 0; margin-left: 40px; }
+
+/* ---------- 匯入：進度與完成摘要（右下角，蓋在樂譜上：出現、消失時樂譜不會跳動） ---------- */
+.toast { position: fixed; right: 16px; bottom: 16px; z-index: 30; width: min(380px, calc(100vw - 32px));
+  background: var(--panel); border: 1px solid #ddd; border-left: 4px solid var(--accent); border-radius: 8px;
+  box-shadow: 0 6px 24px rgba(0, 0, 0, .14); padding: 12px 14px; }
+.toast progress, .progressRow progress { width: 100%; height: 8px; accent-color: var(--accent); }
+#importProgress .text { margin-bottom: 6px; font-variant-numeric: tabular-nums; }
+#importNote { cursor: pointer; overflow: hidden; }
+#importNote.error { border-left-color: #c33; }
+#importNote .close { position: absolute; top: 6px; right: 8px; border: 0; background: none; font-size: 18px; line-height: 1;
+  color: var(--muted); cursor: pointer; padding: 4px; }
+#importNoteText .title { font-weight: 600; color: var(--muted); font-size: 12px; }
+#importNoteText .work { font-size: 16px; font-weight: 600; margin: 2px 24px 6px 0; overflow-wrap: anywhere; }
+#importNoteText .line { margin: 2px 0; }
+#importNoteText .check.ok { color: #2a7a3a; }
+#importNoteText .check.notes { color: #b60; }
+#importNoteText .check.bad { color: #c33; font-weight: 600; }
+#importNote .actions { display: flex; gap: 8px; margin-top: 10px; }
+/* 自動關閉的倒數：滑鼠停在上面時暫停（動畫結束＝關閉，由 app.js 接 animationend） */
+#importNote .timer { position: absolute; left: 0; right: 0; bottom: 0; height: 3px; }
+#importNote .timer i { display: block; height: 100%; background: var(--accent); opacity: .5; transform-origin: left;
+  animation: toastTimer 15s linear forwards; }
+#importNote:hover .timer i { animation-play-state: paused; }
+#importNote.sticky .timer { display: none; }
+@keyframes toastTimer { from { transform: scaleX(1); } to { transform: scaleX(0); } }
+.progressRow { display: flex; align-items: center; gap: 10px; margin: 8px 0; }
+.progressRow .text { white-space: nowrap; font-variant-numeric: tabular-nums; }
+@media (pointer: coarse) { #importNote .close { font-size: 24px; padding: 8px; } }
+body.importing, body.importing * { cursor: progress; }

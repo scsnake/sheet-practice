@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import json
+import re
 import shutil
 import threading
 import time
@@ -214,13 +215,54 @@ def page_image(piece_id: str, name: str):
 # ---------- 總譜匯入（MusicXML / MXL / ZIP：預設值直接匯入，之後在「匯入設定」裡調整） ----------
 
 
-@app.post("/api/imports")
-def create_import(files: list[UploadFile]):
-    """收下一個或多個 MusicXML / MXL / ZIP，用預設設定（或 ZIP 裡的 sheet-practice.json）直接匯入。"""
+# 匯入進度：網頁送匯入時帶 ?progress=<32 個十六進位字>，匯入中可以用 /api/import-progress/<代碼> 查目前的步驟。
+# 只放在記憶體裡；匯入結束就刪掉
+_PROGRESS: dict[str, dict] = {}
+_PROGRESS_LOCK = threading.Lock()
+_PROGRESS_RE = re.compile(r"^[0-9a-f]{32}$")
+
+
+def _progress(token: str):
+    """匯入用的 progress(stage, done, total)；沒有代碼時是 None。"""
+    if not token:
+        return None
+    if not _PROGRESS_RE.match(token):
+        raise HTTPException(400, "進度代碼不正確")
+
+    def report(stage: str, done: int, total: int) -> None:
+        with _PROGRESS_LOCK:
+            _PROGRESS[token] = {"stage": stage, "done": done, "total": total, "at": time.time()}
+            for k in [k for k, v in _PROGRESS.items() if time.time() - v["at"] > 3600]:   # 中斷的匯入留下的
+                del _PROGRESS[k]
+    return report
+
+
+def _with_progress(token: str, run):
+    report = _progress(token)
     try:
-        return score_upload.create([(f.filename or "", f.file) for f in files])
+        return run(report)
     except ValueError as e:
         raise HTTPException(400, str(e)) from None
+    finally:
+        if report:
+            with _PROGRESS_LOCK:
+                _PROGRESS.pop(token, None)
+
+
+@app.get("/api/import-progress/{token}")
+def import_progress(token: str):
+    """匯入中：目前的步驟 {stage, done, total}。還沒開始或已經結束時 stage 是空的。"""
+    if not _PROGRESS_RE.match(token):
+        raise HTTPException(400, "進度代碼不正確")
+    with _PROGRESS_LOCK:
+        p = _PROGRESS.get(token)
+    return {"stage": p["stage"], "done": p["done"], "total": p["total"]} if p else {"stage": "", "done": 0, "total": 0}
+
+
+@app.post("/api/imports")
+def create_import(files: list[UploadFile], progress: str = ""):
+    """收下一個或多個 MusicXML / MXL / ZIP，用預設設定（或 ZIP 裡的 sheet-practice.json）直接匯入。"""
+    return _with_progress(progress, lambda report: score_upload.create([(f.filename or "", f.file) for f in files], report))
 
 
 @app.get("/api/imports/{import_id}")
@@ -246,12 +288,9 @@ class ImportPlan(BaseModel):
 
 
 @app.post("/api/imports/{import_id}/apply")
-def apply_import(import_id: str, plan: ImportPlan):
+def apply_import(import_id: str, plan: ImportPlan, progress: str = ""):
     """用改過的設定重新匯入；這筆匯入原本的聲部會被換掉。"""
-    try:
-        return score_upload.apply(import_id, plan.model_dump())
-    except ValueError as e:
-        raise HTTPException(400, str(e)) from None
+    return _with_progress(progress, lambda report: score_upload.apply(import_id, plan.model_dump(), report))
 
 
 @app.get("/api/examples")
@@ -261,11 +300,8 @@ def list_examples():
 
 
 @app.post("/api/examples/{example_id}/import")
-def import_example(example_id: str):
-    try:
-        return score_upload.import_example(example_id)
-    except ValueError as e:
-        raise HTTPException(400, str(e)) from None
+def import_example(example_id: str, progress: str = ""):
+    return _with_progress(progress, lambda report: score_upload.import_example(example_id, report))
 
 
 @app.get("/api/imports/{import_id}/config")

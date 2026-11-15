@@ -104,12 +104,6 @@
 </header>
 
 <div id="status" class="status hidden"></div>
-<div id="importNote" class="status hidden">
-  <span id="importNoteText"></span>
-  <button id="importNoteReport" class="btn small">檢查報告</button>
-  <button id="importNoteSettings" class="btn small">匯入設定…</button>
-  <button id="importNoteClose" class="btn small" title="關閉">×</button>
-</div>
 <div id="errorBar" class="status errbar hidden">
   <span id="errorSummary"></span>
   <button id="prevErr" class="btn small" title="上一個拍數不符的小節">◀</button>
@@ -140,6 +134,21 @@
 
 <datalist id="workNames"></datalist>
 
+<!-- 匯入：比 0.8 秒久才出現的進度，和匯入完成後的摘要（15 秒或點一下就關） -->
+<div id="importProgress" class="toast hidden" role="status" aria-live="polite">
+  <div class="text"></div>
+  <progress max="1" value="0"></progress>
+</div>
+<div id="importNote" class="toast hidden" role="status" aria-live="polite">
+  <button id="importNoteClose" class="close" title="關閉" aria-label="關閉">×</button>
+  <div id="importNoteText"></div>
+  <div class="actions">
+    <button id="importNoteReport" class="btn small">檢查報告</button>
+    <button id="importNoteSettings" class="btn small">匯入設定…</button>
+  </div>
+  <div class="timer"><i></i></div>
+</div>
+
 <dialog id="importDlg">
   <h3>匯入設定</h3>
   <p class="muted" id="imIntro">改好後按「重新匯入」：這次匯入的聲部會換成新的。</p>
@@ -155,6 +164,7 @@
      <label>來源 <input id="imSource" type="text" size="32"></label></p>
   <p class="muted">授權、來源空白時用檔案裡寫的；各檔案不一樣時，每個檔案的值都會記下來。</p>
   <p id="imWarn" class="warn"></p>
+  <div id="imProgress" class="progressRow hidden" role="status"><span class="text"></span><progress max="1" value="0"></progress></div>
   <form method="dialog"><a id="imConfig" class="btn" download="sheet-practice.json" title="存成 sheet-practice.json；放進 ZIP，下次匯入就直接用這些設定">下載設定檔</a>
     <button class="btn" value="cancel">取消</button> <button id="doImport" class="btn primary" value="ok">重新匯入</button></form>
 </dialog>

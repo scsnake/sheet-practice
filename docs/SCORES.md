@@ -90,7 +90,12 @@ The app can do steps 2–4 for you.
 2. Select a `.zip`, or one or more `.musicxml`, `.xml` or `.mxl` files.
 
 The app imports at once with default settings, and opens the work.
-A note shows the parts, the files used and the result of the `prepare.py` check.
+
+- If the import takes more than 0.8 s, a progress bar shows at the bottom right.
+  It shows the step: upload, read files, build parts, check, load the score.
+- When the import is done, a summary shows at the bottom right.
+  It shows the work, the movements, the bars, the parts, the practice part and the result of the `prepare.py` check.
+- The summary closes after 15 s, or when you click it. If the check finds problems, it stays until you click it.
 
 ### Default settings
 
@@ -112,7 +117,7 @@ The app ignores other files in a ZIP, such as `__MACOSX/` and text files.
 ### Change the settings later
 
 1. Open the work.
-2. Open 設定 ▾, then click 匯入設定…. The note after an import has the same button.
+2. Open 設定 ▾, then click 匯入設定…. The summary after an import has the same button.
 3. Select the files and their order, the parts, the part names, the practice part, the work name, the rights and the source.
 4. Click 重新匯入. The new parts replace the parts of this import.
 

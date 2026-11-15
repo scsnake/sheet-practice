@@ -145,7 +145,7 @@ with tempfile.TemporaryDirectory() as td, sync_playwright() as p:
     cfg_json = pg.request.get(URL + pg.get_attribute("#imConfig", "href").lstrip("/")).json()
     check("B: settings download as sheet-practice.json", cfg_json.get("work") == "Import A" and len(cfg_json.get("files", [])) == 2, str(cfg_json)[:120])
     held = []
-    pg.route("**/api/imports/*/apply", lambda route: held.append(route))
+    pg.route("**/api/imports/*/apply?*", lambda route: held.append(route))
     pg.click("#doImport")
     deadline = time.time() + 10
     while not held and time.time() < deadline:
@@ -156,7 +156,7 @@ with tempfile.TemporaryDirectory() as td, sync_playwright() as p:
     check("B: Cancel is disabled during the import", pg.is_disabled("#importDlg button[value=cancel]"))
     held and held[0].continue_()
     note = wait_note(pg, "已重新匯入")
-    pg.unroute("**/api/imports/*/apply")
+    pg.unroute("**/api/imports/*/apply?*")
     wait_loaded(pg, "Import-A2", 20)
     w = work_info(pg, "Import-A2")
     check("B: new parts and names", w and [x["part"] for x in w["parts"]] == ["Violin I", "Violin II", "Viola", "Violoncello", "Piano"],
@@ -233,8 +233,55 @@ with tempfile.TemporaryDirectory() as td, sync_playwright() as p:
     check("G: four parts", [x["part"] for x in g["parts"]] == ["Violin I", "Violin II", "Viola", "Cello"], str([x["part"] for x in g["parts"]]))
     check("G: four movements in the movement menu", pg.locator("#sectionSelect option").count() == 4, str(pg.locator("#sectionSelect option").count()))
     check("G: practice part Violin II", practice_xml_id(pg) == part_xml_id(g, "Violin II"), note)
+    check("G: summary counts movements and bars", "4 個樂章・531 小節" in note, note)
+    pg.click("#importNoteText")
+    check("G: a click closes the summary", pg.is_hidden("#importNote"))
 
-    for slug in ("Import-A2", "Import-C", "Import-B", "Import-B-2", "Import-F", gslug):
+    # H. a slow import shows the progress card; the work loads once; the summary closes itself after 15 s
+    write_zip(td / "slow.zip", {f"Import H/mvt{i}.musicxml": movement("Import H", mv, first)
+                                for i, (mv, first) in enumerate(((MV_44, 1), (MV_38, 13)), start=1)})
+    size = (td / "slow.zip").stat().st_size
+    cdp = pg.context.new_cdp_session(pg)
+    cdp.send("Network.enable")
+    cdp.send("Network.emulateNetworkConditions", {"offline": False, "latency": 0, "downloadThroughput": -1,
+                                                  "uploadThroughput": size / 2.5})   # about 2.5 s of upload
+    loads = []
+    pg.on("request", lambda r: loads.append(r.url) if "/api/works/Import-H/score.musicxml" in r.url else None)
+    pg.mouse.move(10, 450)   # not over the summary: hover stops its timer
+    pg.evaluate("document.getElementById('importNote').classList.remove('hidden')")   # an old summary is still open
+    pick_files(pg, [str(td / "slow.zip")])
+    try:
+        pg.wait_for_function("!document.getElementById('importProgress').classList.contains('hidden')", timeout=5000)
+        shown = True
+    except Exception:  # noqa: BLE001
+        shown = False
+    seen = pg.inner_text("#importProgress .text") if shown else ""
+    check("H: progress card shown for a slow import", shown and "slow.zip" in seen, f"{size} bytes, text {seen!r}")
+    check("H: the old summary closes when an import starts", pg.is_hidden("#importNote"))
+    note = wait_note(pg, "Import H")
+    t_note = time.time()
+    cdp.send("Network.emulateNetworkConditions", {"offline": False, "latency": 0, "downloadThroughput": -1, "uploadThroughput": -1})
+    check("H: progress card hidden at the end", pg.is_hidden("#importProgress"))
+    check("H: summary lists movements, bars and parts", "2 個樂章・20 小節" in note and "Violin I、Violin II、Viola、Cello、Contrabass" in note, note)
+    wait_loaded(pg, "Import-H", 20)
+    check("H: imported work loads once", len(loads) == 1, str(loads))
+    pg.wait_for_timeout(10000)
+    check("H: summary still shown after 10 s", pg.is_visible("#importNote"))
+    pg.wait_for_function("document.getElementById('importNote').classList.contains('hidden')", timeout=10000)
+    check("H: summary closes itself after about 15 s", 13 < time.time() - t_note < 20, f"{time.time() - t_note:.1f} s")
+
+    # I. the import is saved, but opening the work fails: not reported as a failed import
+    (td / "loadfail.musicxml").write_text(movement("Import I", MV_44))
+    pg.route("**/api/works", lambda route: route.fulfill(status=500, body="down"))
+    pick_files(pg, [str(td / "loadfail.musicxml")])
+    note = wait_note(pg, "Import I")
+    pg.unroute("**/api/works")
+    status = pg.inner_text("#status") if pg.is_visible("#status") else ""
+    check("I: summary shown although the work did not open", "已匯入" in note, note)
+    check("I: load failure reported, not an import failure", "打開作品失敗" in status and "匯入失敗" not in status, status)
+    check("I: the work exists once", work_info(pg, "Import-I") is not None and work_info(pg, "Import-I-2") is None)
+
+    for slug in ("Import-A2", "Import-C", "Import-B", "Import-B-2", "Import-F", "Import-H", "Import-I", gslug):
         for x in (work_info(pg, slug) or {"parts": []})["parts"]:
             pg.request.delete(f"{URL}api/pieces/{x['id']}")
     left = [w["slug"] for w in pg.request.get(URL + "api/works").json() if w["slug"].startswith("Import")]

@@ -188,7 +188,7 @@
   }
 
   // ---------- 作品清單 / 上傳 / 管理 ----------
-  async function refreshWorks(selectSlug) {
+  async function refreshWorks(selectSlug, autoLoad = true) {   // autoLoad = false：呼叫的地方自己 await loadWork
     const list = await api("/api/works");
     const sel = $("workSelect"); sel.innerHTML = "";
     if (!list.length) sel.innerHTML = "<option value=''>（尚無作品）</option>";
@@ -204,7 +204,7 @@
     }
     const want = selectSlug || localStorage.getItem("lastWork");
     if (want && list.some((w) => w.slug === want)) sel.value = want; else if (list.length) sel.value = list[0].slug;
-    if (sel.value && sel.value !== S.slug) loadWork(sel.value);
+    if (autoLoad && sel.value && sel.value !== S.slug) loadWork(sel.value);
     return list;
   }
   $("workSelect").addEventListener("change", (e) => loadWork(e.target.value));
@@ -221,7 +221,7 @@
     return /violin\s*1|violin\s*i(?![iv])|vn\.?\s*1|violin1/.test(n) ? "Violin I" : /violin\s*2|violin\s*ii|vn\.?\s*2|violin2|vn2/.test(n) ? "Violin II"
       : /viola/.test(n) ? "Viola" : /cello/.test(n) ? "Cello" : /bass/.test(n) ? "Contrabass" : "";
   };
-  const pickImport = () => { $("importInput").value = ""; $("importInput").click(); };
+  const pickImport = () => { if (importing) return; $("importInput").value = ""; $("importInput").click(); };
   $("btnUpload").addEventListener("click", pickImport);
   $("emptyImport").addEventListener("click", pickImport);
   $("importInput").addEventListener("change", () => { const files = [...$("importInput").files]; if (files.length) importFiles(files); });
@@ -242,40 +242,123 @@
     await refreshWorks(slug);
     if (slug === S.slug) loadWork(slug, true);
   }
-  async function importScores(files) {
+  // 匯入的進度：大多數匯入不到 IMPORT_PROGRESS_MS 就完成，不顯示；比較久時顯示目前的步驟和進度條。
+  // 上傳的比例來自瀏覽器；伺服器端的步驟（讀取檔案、建立聲部、檢查）問 /api/import-progress
+  const IMPORT_PROGRESS_MS = 800;
+  const STAGES = { upload: ["上傳", 0, 0.15], read: ["讀取檔案", 0.15, 0.45], build: ["建立聲部", 0.45, 0.85], check: ["檢查", 0.85, 0.93], load: ["載入樂譜", 0.93, 1] };
+  const STAGE_ORDER = Object.keys(STAGES);
+  let importing = false;
+  function importProgress(title, boxId) {
+    const box = $(boxId), bar = box.querySelector("progress"), text = box.querySelector(".text");
+    let stage = "upload", done = 0, total = 0, shown = false;
+    const draw = () => {
+      if (!shown) return;
+      const [name, a, b] = STAGES[stage], f = total ? Math.min(1, done / total) : 0;
+      bar.value = a + (b - a) * f;
+      const count = stage === "upload" ? (total ? ` ${Math.round(f * 100)}%` : "") : total > 1 ? ` ${Math.min(done + 1, total)}/${total}` : "";
+      text.textContent = `${title}：${name}${count}…`;
+    };
+    const timer = setTimeout(() => { shown = true; box.classList.remove("hidden"); draw(); }, IMPORT_PROGRESS_MS);
+    return {
+      set(s, d = 0, t = 0) {   // 只往前走：晚到的舊進度不蓋掉新的
+        if (STAGE_ORDER.indexOf(s) < STAGE_ORDER.indexOf(stage)) return;
+        stage = s; done = d; total = t; draw();
+      },
+      end() { clearTimeout(timer); box.classList.add("hidden"); },
+    };
+  }
+  // iPad 用 http 連進來時不是 secure context，沒有 crypto.randomUUID；getRandomValues 都有
+  const randomToken = () => [...crypto.getRandomValues(new Uint8Array(16))].map((b) => b.toString(16).padStart(2, "0")).join("");
+  function postImport(url, body, prog) {   // 和 api() 一樣：回傳 JSON，失敗時丟出「狀態碼 內容」
+    const token = randomToken();
+    return new Promise((resolve, reject) => {
+      const x = new XMLHttpRequest();   // fetch 拿不到上傳進度
+      let finished = false, pollTimer = null;
+      const poll = async () => {
+        try { const st = await api(`/api/import-progress/${token}`); if (!finished && st.stage) prog.set(st.stage, st.done, st.total); }
+        catch { /* 只是進度，問不到就算了 */ }
+        if (!finished) pollTimer = setTimeout(poll, 300);
+      };
+      pollTimer = setTimeout(poll, IMPORT_PROGRESS_MS);   // 快的匯入不必問
+      const end = () => { finished = true; clearTimeout(pollTimer); };
+      x.open("POST", `${url}?progress=${token}`);
+      if (typeof body === "string") x.setRequestHeader("content-type", "application/json");
+      x.upload.onprogress = (e) => { if (e.lengthComputable) prog.set("upload", e.loaded, e.total); };
+      x.onload = () => {
+        end();
+        if (x.status < 200 || x.status >= 300) { reject(new Error(`${x.status} ${x.responseText}`)); return; }
+        try { resolve(JSON.parse(x.responseText)); } catch (e) { reject(e); }
+      };
+      x.onerror = () => { end(); reject(new Error("連不到伺服器")); };
+      x.send(body);
+    });
+  }
+  async function importAndOpen(title, url, body, opts = {}) {
+    // 送出匯入 → 打開匯入的作品 → 顯示摘要。匯入失敗時丟出錯誤，由呼叫的地方顯示。
+    // opts.progressBox：進度顯示在這裡（匯入設定視窗是 modal，蓋在頁面的進度上）；opts.onDone(r)：伺服器匯入完成時
+    hideImportNote();   // 上一個摘要和進度在同一個位置：不關掉會蓋住進度
+    let prog = importProgress(title, opts.progressBox || "importProgress");
+    let r;
+    try { r = await postImport(url, body, prog); }
+    catch (err) { prog.end(); throw err; }
+    // 到這裡匯入已經完成：之後打開作品失敗也不算匯入失敗（不然使用者再匯入一次，會多出一個「(2)」）
+    if (opts.progressBox) { prog.end(); prog = importProgress(title, "importProgress"); }
+    if (opts.onDone) opts.onDone(r);
+    prog.set("load");
+    let loadError = null;
+    try {
+      rememberPractice(r);
+      await refreshWorks(r.slug, false);
+      await loadWork(r.slug, true);
+    } catch (err) { loadError = err; }
+    finally { prog.end(); }
+    showImportNote(r);
+    if (loadError) setStatus(`已匯入「${r.work}」，但打開作品失敗：${apiError(loadError)}。請重新整理頁面。`, true);
+    return r;
+  }
+  async function guardedImport(title, url, body) {   // 一次只匯入一個
+    if (importing) return;
+    importing = true; document.body.classList.add("importing"); setStatus("");
+    try { await importAndOpen(title, url, body); }
+    catch (err) { setStatus("匯入失敗：" + apiError(err), true); }
+    finally { importing = false; document.body.classList.remove("importing"); }
+  }
+  function importScores(files) {
     const fd = new FormData();
     for (const f of files) fd.append("files", f);
-    setStatus(`匯入中：${files.length} 個檔案…`);
-    let r;
-    try { r = await api("/api/imports", { method: "POST", body: fd }); }
-    catch (err) { setStatus("匯入失敗：" + apiError(err), true); return; }
-    setStatus("");
-    showImportNote(r);
-    await refreshWorks(r.slug);
-    if (r.slug === S.slug) loadWork(r.slug, true);
+    return guardedImport(`匯入 ${files.length === 1 ? files[0].name : `${files.length} 個檔案`}`, "/api/imports", fd);
   }
   let lastImport = null;
+  function rememberPractice(r) {
+    if (!r.practice_xml_id) return;   // 瀏覽器裡存的設定優先於伺服器的預設：重新匯入後聲部代碼變了，練習聲部也要跟著改
+    try {
+      const key = settingsKey(r.slug), st = JSON.parse(localStorage.getItem(key));
+      if (st) { st.practice = r.practice_xml_id; localStorage.setItem(key, JSON.stringify(st)); }
+    } catch (e) { /* 無痕／被擋：用伺服器的預設 */ }
+  }
+  // 匯入完成的摘要：15 秒後（倒數條的 CSS 動畫結束）或點一下就關；有問題時不自動關，要讓使用者看到
   function showImportNote(r) {
     lastImport = r;
-    if (r.practice_xml_id) {   // 瀏覽器裡存的設定優先於伺服器的預設：重新匯入後聲部代碼變了，練習聲部也要跟著改
-      try {
-        const key = settingsKey(r.slug), st = JSON.parse(localStorage.getItem(key));
-        if (st) { st.practice = r.practice_xml_id; localStorage.setItem(key, JSON.stringify(st)); }
-      } catch (e) { /* 無痕／被擋：用伺服器的預設 */ }
-    }
-    let t = `${r.replaced ? "已重新匯入" : "已匯入"}「${r.work}」：${r.parts.join("、")}（${r.files_used.length} 個檔案`;
-    if (r.files_unused) t += `，另有 ${r.files_unused} 個沒用到`;
-    t += "）";
-    if (r.renamed_from) t += `。已經有「${r.renamed_from}」，所以取名「${r.work}」`;
-    if (r.practice) t += `。練習聲部：${r.practice}`;
-    if (r.config_file) t += `。用了 ${r.config_file} 的設定`;
+    const box = $("importNote"), el = $("importNoteText");
+    const div = (cls, text) => { const d = document.createElement("div"); d.className = cls; d.textContent = text; return d; };
+    const size = [r.movements > 1 ? `${r.movements} 個樂章` : "", r.measures ? `${r.measures} 小節` : "",
+      `${r.files_used.length} 個檔案` + (r.files_unused ? `（另有 ${r.files_unused} 個沒用到）` : "")].filter(Boolean).join("・");
     const notes = r.report.filter((line) => line.trim().startsWith("!")).length;   // prepare.py 的「!」行：提醒，不算問題（例如沒有授權記錄）
-    t += r.problems ? `。檢查發現 ${r.problems} 個問題` : notes ? `。檢查沒有問題，有 ${notes} 個提醒` : "。檢查沒有問題";
-    $("importNoteText").textContent = t;
-    $("importNote").classList.toggle("error", !!r.problems);
-    $("importNote").classList.remove("hidden");
+    el.replaceChildren(div("title", r.replaced ? "已重新匯入" : "已匯入"), div("work", `「${r.work}」`), div("line", size), div("line", `聲部：${r.parts.join("、")}`));
+    if (r.practice) el.append(div("line", `練習聲部：${r.practice}`));
+    if (r.renamed_from) el.append(div("line", `已經有「${r.renamed_from}」，所以取名「${r.work}」`));
+    if (r.config_file) el.append(div("line", `用了 ${r.config_file} 的設定`));
+    el.append(div(`line check ${r.problems ? "bad" : notes ? "notes" : "ok"}`,
+      r.problems ? `檢查發現 ${r.problems} 個問題` : notes ? `檢查沒有問題，有 ${notes} 個提醒` : "檢查沒有問題"));
+    box.classList.toggle("error", !!r.problems);
+    box.classList.toggle("sticky", !!r.problems);
+    const bar = box.querySelector(".timer i");   // 倒數重新開始（上一個摘要還沒關時）
+    bar.style.animation = "none"; void bar.offsetWidth; bar.style.animation = "";
+    box.classList.remove("hidden");
   }
-  $("importNoteClose").addEventListener("click", () => $("importNote").classList.add("hidden"));
+  const hideImportNote = () => $("importNote").classList.add("hidden");
+  $("importNote").querySelector(".timer i").addEventListener("animationend", () => { if (!$("importNote").classList.contains("sticky")) hideImportNote(); });
+  $("importNote").addEventListener("click", hideImportNote);   // 點一下就關；按鈕先做自己的事，再一起關
   $("importNoteReport").addEventListener("click", () => {
     if (!lastImport) return;
     $("imDoneTitle").textContent = lastImport.problems ? `檢查發現 ${lastImport.problems} 個問題` : "檢查沒有問題";
@@ -285,16 +368,7 @@
   $("importNoteSettings").addEventListener("click", () => lastImport && openImportSettings(lastImport.import));
   // 內建範例：repo 的 examples/（授權允許自由散布）。第一次用的人可以不找樂譜就試
   let exampleList = [];
-  async function importExample(ex) {
-    setStatus(`匯入範例中：${ex.work}…`);
-    let r;
-    try { r = await api(`/api/examples/${encodeURIComponent(ex.id)}/import`, { method: "POST" }); }
-    catch (err) { setStatus("匯入失敗：" + apiError(err), true); return; }
-    setStatus("");
-    showImportNote(r);
-    await refreshWorks(r.slug);
-    if (r.slug === S.slug) loadWork(r.slug, true);
-  }
+  const importExample = (ex) => guardedImport(`匯入範例「${ex.work}」`, `/api/examples/${encodeURIComponent(ex.id)}/import`, null);
   (async () => {
     try { exampleList = await api("/api/examples"); } catch { exampleList = []; }
     const box = $("emptyExamples").querySelector(".exampleButtons");
@@ -422,19 +496,16 @@
       parts: IM.parts.filter((p) => p.selected).map((p) => ({ name: p.name, display: p.display.trim() })),
     };
     const setBusy = (on) => { IM.busy = on; $("doImport").disabled = on; $("importDlg").querySelector("button[value=cancel]").disabled = on; };
-    setBusy(true); setStatus(`重新匯入中：${body.parts.length} 個聲部…`);
-    let r;
+    if (importing) return;
+    setBusy(true); importing = true; $("imWarn").textContent = ""; setStatus("");
     try {
-      r = await api(`/api/imports/${IM.id}/apply`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
+      await importAndOpen(`重新匯入「${body.work}」`, `/api/imports/${IM.id}/apply`, JSON.stringify(body),
+        { progressBox: "imProgress", onDone: () => { setBusy(false); $("importDlg").close(); } });
     } catch (err) {
-      setBusy(false); setStatus("");
-      $("imWarn").textContent = "匯入失敗：" + apiError(err);
-      return;
-    }
-    setBusy(false); $("importDlg").close(); setStatus("");
-    showImportNote(r);
-    await refreshWorks(r.slug);
-    loadWork(r.slug, true);
+      setBusy(false);
+      if ($("importDlg").open) $("imWarn").textContent = "匯入失敗：" + apiError(err);
+      else setStatus("匯入失敗：" + apiError(err), true);
+    } finally { importing = false; }
   });
 
   $("btnManage").addEventListener("click", async () => {

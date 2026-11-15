@@ -18,6 +18,9 @@
   練習聲部：不指定（app 預設第一個聲部）；sheet-practice.json 的 practice 可以指定
 
 ZIP 裡的路徑不可信任：檔案一律用流水號重新命名，不照 ZIP 裡的路徑寫入；解壓大小有上限。
+
+進度：create()／apply()／import_example() 可以給 progress(stage, done, total)。stage 依序是
+  read（讀取檔案 done/total）、build（建立聲部 done/total）、check（prepare.py 檢查）。
 """
 
 from __future__ import annotations
@@ -29,7 +32,7 @@ import time
 import uuid
 import zipfile
 from pathlib import Path, PurePosixPath
-from typing import BinaryIO
+from typing import BinaryIO, Callable
 
 import import_parts
 import omr
@@ -44,6 +47,12 @@ MAX_TOTAL_BYTES = 1024 * 1024 * 1024       # 一次匯入解壓後的總大小�
 MAX_CONFIG_BYTES = 1024 * 1024
 ORPHAN_SECONDS = 3600                      # 沒有任何聲部的匯入紀錄，過這麼久就刪掉
 ID_RE = re.compile(r"^[0-9a-f]{32}$")
+
+Progress = Callable[[str, int, int], None]
+
+
+def _no_progress(stage: str, done: int, total: int) -> None:
+    pass
 
 
 def _natural_key(label: str):
@@ -323,7 +332,7 @@ def _free_work_name(name: str) -> str:
 # ---------- 匯入 ----------
 
 
-def create(uploads: list[tuple[str, BinaryIO]]) -> dict:
+def create(uploads: list[tuple[str, BinaryIO]], progress: Progress | None = None) -> dict:
     """收下檔案，用預設設定（或 ZIP 裡的 sheet-practice.json）馬上匯入。失敗時不留下任何東西。"""
     cleanup_orphans()
     import_id = uuid.uuid4().hex
@@ -332,14 +341,14 @@ def create(uploads: list[tuple[str, BinaryIO]]) -> dict:
     try:
         manifest = _receive(d, uploads)
         (d / "manifest.json").write_text(json.dumps(manifest, ensure_ascii=False))
-        info = summary(import_id)
+        info = summary(import_id, progress)
         usable = [f for f in info["files"] if not f["error"]]
         if not usable:
             raise ValueError("所有樂譜檔都無法讀取：" + "；".join(f"{f['label']} {f['error']}" for f in info["files"][:3]))
         plan = _default_plan(manifest, usable)
         requested = plan["work"]
         plan["work"] = _free_work_name(requested)
-        result = apply(import_id, plan)
+        result = apply(import_id, plan, progress, info)
     except Exception:
         shutil.rmtree(d, ignore_errors=True)
         raise
@@ -348,10 +357,15 @@ def create(uploads: list[tuple[str, BinaryIO]]) -> dict:
     return result
 
 
-def summary(import_id: str) -> dict:
+def summary(import_id: str, progress: Progress | None = None) -> dict:
+    progress = progress or _no_progress
     d = _record(import_id)
     manifest = json.loads((d / "manifest.json").read_text())
-    files = [_read_file(d, f) for f in manifest["files"]]
+    files = []
+    for i, f in enumerate(manifest["files"]):
+        progress("read", i, len(manifest["files"]))
+        files.append(_read_file(d, f))
+    progress("read", len(files), len(files))
     for f in files:
         f["folder"] = _folder(f)
     parts: dict[str, dict] = {}
@@ -405,14 +419,16 @@ def _validate(plan: dict, by_id: dict) -> list[tuple[str, str, list[Path]]]:
     return out
 
 
-def apply(import_id: str, plan: dict) -> dict:
+def apply(import_id: str, plan: dict, progress: Progress | None = None, info: dict | None = None) -> dict:
     """用 plan 匯入（第一次匯入，或在「匯入設定」裡改過之後重新匯入）。
 
     plan = {"work", "files": [檔案 id，＝樂章順序], "parts": [{"name", "display"}], "rights", "source"}
     重新匯入時，先建新聲部；這筆紀錄原本的聲部先移到旁邊，檢查成功才刪，失敗就放回去。
+    info：create() 剛讀過的 summary()，不必再讀一次每個檔案。
     """
+    progress = progress or _no_progress
     d = _record(import_id)
-    info = summary(import_id)
+    info = info or summary(import_id, progress)
     by_id = {f["id"]: f for f in info["files"] if not f["error"]}
     steps = _validate(plan, by_id)
     work = plan["work"].strip()
@@ -437,6 +453,7 @@ def apply(import_id: str, plan: dict) -> dict:
     moved: list[Path] = []
     try:
         for i, (name, disp, ids) in enumerate(steps):
+            progress("build", i, len(steps))
             # 用完全相同的名稱比對（re.escape），不讓總譜裡的名稱被當成正規表示式
             pid = import_parts.import_part(work, disp, [d / o for o in ids], re.escape(name), base + i, prov)
             created.append(pid)
@@ -448,6 +465,7 @@ def apply(import_id: str, plan: dict) -> dict:
         for p, _ in old:
             p.rename(aside / p.name)
             moved.append(aside / p.name)
+        progress("check", 0, 1)
         problems = prepare.check_work(works.slug(work), fix=True, out=report.append)
     except Exception:
         for pid in created:
@@ -470,6 +488,7 @@ def apply(import_id: str, plan: dict) -> dict:
              "rights": (plan.get("rights") or "").strip(), "source": (plan.get("source") or "").strip(),
              "practice": practice}
     (d / "import.json").write_text(json.dumps(saved, ensure_ascii=False, indent=2))
+    first = omr.piece_dir(created[0]) / "score.musicxml"
     return {
         "import": import_id,
         "slug": works.slug(work),
@@ -484,6 +503,8 @@ def apply(import_id: str, plan: dict) -> dict:
         "replaced": len(old),
         "practice": practice,
         "practice_xml_id": practice_xml_id,
+        "measures": max((works.measure_count(omr.piece_dir(pid)) or 0 for pid in created), default=0),
+        "movements": first.read_text(encoding="utf-8").count('id="movement-') if first.is_file() else 0,
     }
 
 
@@ -504,7 +525,7 @@ def examples() -> list[dict]:
     return out
 
 
-def import_example(example_id: str) -> dict:
+def import_example(example_id: str, progress: Progress | None = None) -> dict:
     """把一個內建範例當成上傳的檔案匯入（和網頁匯入走同一條路）。"""
     if example_id not in {e["id"] for e in examples()}:
         raise ValueError(f"沒有這個範例：{example_id!r}")
@@ -512,7 +533,7 @@ def import_example(example_id: str) -> dict:
     files = sorted(f for f in d.iterdir() if f.suffix.lower() in omr.XML_EXTS or f.name == CONFIG_NAME)
     streams = [f.open("rb") for f in files]
     try:
-        return create([(f.name, st) for f, st in zip(files, streams)])
+        return create([(f.name, st) for f, st in zip(files, streams)], progress)
     finally:
         for st in streams:
             st.close()

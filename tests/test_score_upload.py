@@ -278,6 +278,38 @@ check(all((p / "score.musicxml").read_text().count('id="movement-') == 4 for p, 
 check(rx["practice"] == "Violin II" and all(m.get("rights") == "OpenScore (CC0)" for _, m in pieces), "example practice part and rights")
 expect_error(lambda: su.import_example("../examples"), "沒有這個範例", "unknown example")
 
+check(rx["measures"] == 531 and rx["movements"] == 4, f"result counts: {rx['measures']} bars, {rx['movements']} movements")
+
+# 13. progress reports: read each file once, build each part, then check; re-import reads again
+seen: list[tuple[str, int, int]] = []
+rp = su.create([("prog.zip", zip_bytes({"P/mvt1.musicxml": movement(MV1, work="Progress"), "P/mvt2.musicxml": movement(MV2, 13, work="Progress")}))],
+               lambda *a: seen.append(a))
+check(seen == [("read", 0, 2), ("read", 1, 2), ("read", 2, 2)] + [("build", i, 5) for i in range(5)] + [("check", 0, 1)],
+      f"progress of a first import: {seen}")
+seen.clear()
+su.apply(rp["import"], {"work": "Progress", "files": su.summary(rp["import"])["plan"]["files"],
+                        "parts": [{"name": "Violin 1", "display": "Violin I"}]}, lambda *a: seen.append(a))
+check([x[0] for x in seen] == ["read", "read", "read", "build", "check"], f"progress of a re-import: {seen}")
+check(rp["measures"] == 20 and rp["movements"] == 2, f"counts of two files: {rp['measures']}, {rp['movements']}")
+
+import server  # noqa: E402
+from fastapi import HTTPException  # noqa: E402
+tok = "ab" * 16
+try:
+    server._progress("../x")
+    check(False, "bad progress token rejected")
+except HTTPException as e:
+    check(e.status_code == 400, "bad progress token rejected")
+mid = []
+out = server._with_progress(tok, lambda report: (report("build", 1, 3), mid.append(server.import_progress(tok)), "done")[-1])
+check(mid == [{"stage": "build", "done": 1, "total": 3}] and out == "done", f"progress visible during the import: {mid}")
+check(server.import_progress(tok)["stage"] == "", "progress removed after the import")
+try:
+    server._with_progress(tok, lambda report: (report("read", 0, 1), su.import_example("nope"))[-1])
+    check(False, "failed import gives 400")
+except HTTPException as e:
+    check(e.status_code == 400 and server.import_progress(tok)["stage"] == "", "failed import gives 400 and removes the progress")
+
 shutil.rmtree(DATA, ignore_errors=True)
 print("FAIL" if failures else "All score_upload checks passed.")
 sys.exit(1 if failures else 0)
