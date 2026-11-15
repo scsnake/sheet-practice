@@ -78,6 +78,7 @@ Scores go in the folder that `SP_DATA_DIR` names. The default is `data/`.
    ```sh
    uv run python prepare.py --work "My Work"
    uv run python prepare.py --work "My Work" --fix
+   uv run python check_alignment.py My-Work     # do the parts line up bar by bar? (--list shows the names)
    ```
 
 5. Start the app and open the work. Look for red bars and pink bars.
@@ -95,7 +96,12 @@ The app imports at once with default settings, and opens the work.
   It shows the step: upload, read files, build parts, check, load the score.
 - When the import is done, a summary shows at the bottom right.
   It shows the work, the movements, the bars, the parts, the practice part and the result of the `prepare.py` check.
-- The summary closes after 15 s, or when you click it. If the check finds problems, it stays until you click it.
+- The summary also shows the alignment check (`check_alignment.py`): do the parts line up bar by bar?
+  - "對齊：沒有發現錯開": no part seems shifted. The number in brackets counts the ranges with too few markings to check.
+  - "對齊：N 處可能錯開": a part is probably 1 or 2 bars off. Click a range to go to its first bar, then listen with all parts.
+  - 檢查報告 lists all suspects and all ranges that the check could not see.
+- The summary closes after 15 s, or when you click it.
+  If the check finds problems or suspects, it stays until you click it.
 
 ### Default settings
 

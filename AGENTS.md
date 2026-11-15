@@ -21,9 +21,10 @@ Read `docs/SCORES.md` first. [docs/AGENT_SCORE_GUIDE.md](docs/AGENT_SCORE_GUIDE.
 4. Let the user select a file. The user downloads the file, or tells you to use the site's normal download.
 5. Check that `SP_DATA_DIR` points outside this repo. Set it if the user wants that.
 6. Follow "Prepare a score" in `docs/SCORES.md`. Pass `--rights` and `--source` to `import_parts.py`.
-7. Run `uv run python prepare.py --work "<name>"`.
+7. Run `uv run python prepare.py --work "<name>"` and `uv run python check_alignment.py <work-slug>`.
 8. Treat over-full bars and different bar counts as failures. Do not hide them.
 9. Tell the user about each problem and each warning from `prepare.py`.
+10. Tell the user about each alignment suspect and each "not checked" range (AGENT_SCORE_GUIDE.md, Step 7).
 
 Use a PDF and OMR only when no symbolic score exists. Tell the user that OMR needs manual correction.
 
@@ -35,6 +36,7 @@ Use a PDF and OMR only when no symbolic score exists. Tell the user that OMR nee
 | Make demo works | `uv run python tests/fixtures/make_demo.py` |
 | Run the app | `./run.sh`, then open <http://localhost:8777/> |
 | Check all works | `uv run python prepare.py` |
+| Check that the parts line up | `uv run python check_alignment.py <work-slug>` (`--list` shows the slugs) |
 | Run e2e tests | `uv sync --group dev && uv run playwright install chromium && tests/run_e2e.sh` |
 
 Warning: do not add `--host 0.0.0.0` to `./run.sh` on a network that you do not trust.

@@ -34,6 +34,7 @@ import zipfile
 from pathlib import Path, PurePosixPath
 from typing import BinaryIO, Callable
 
+import check_alignment
 import import_parts
 import omr
 import prepare
@@ -475,6 +476,10 @@ def apply(import_id: str, plan: dict, progress: Progress | None = None, info: di
         shutil.rmtree(aside, ignore_errors=True)
         raise
     shutil.rmtree(aside, ignore_errors=True)
+    try:   # 各聲部是否逐小節對齊（check_alignment.py）。匯入已經完成：這個檢查出錯不可以讓匯入失敗
+        alignment = check_alignment.check_parts(check_alignment.load_work(works.slug(work)))
+    except Exception as e:  # noqa: BLE001
+        alignment = {"error": f"{type(e).__name__}: {e}"}
     practice = (plan.get("practice") or "").strip()
     practice_xml_id = ""
     if practice:   # 練習聲部：寫進作品在伺服器上的預設設定（瀏覽器第一次打開這個作品時用）
@@ -499,6 +504,7 @@ def apply(import_id: str, plan: dict, progress: Progress | None = None, info: di
         "files_unused": len(by_id) - len(order),
         "problems": problems,
         "report": report,
+        "alignment": alignment,
         "added_to_existing": bool(others),
         "replaced": len(old),
         "practice": practice,

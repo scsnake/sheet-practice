@@ -175,6 +175,9 @@ body.editing #peekTab, body.editing #nowChip { display: none; }
 #importNoteText .check.ok { color: #2a7a3a; }
 #importNoteText .check.notes { color: #b60; }
 #importNoteText .check.bad { color: #c33; font-weight: 600; }
+#importNoteText .suspect { display: block; width: 100%; margin: 3px 0; padding: 4px 8px; text-align: left; font: inherit;
+  color: inherit; background: rgba(187, 102, 0, .08); border: 1px solid rgba(187, 102, 0, .35); border-radius: 6px; cursor: pointer; }
+#importNoteText .suspect:hover { background: rgba(187, 102, 0, .16); }
 #importNote .actions { display: flex; gap: 8px; margin-top: 10px; }
 /* 自動關閉的倒數：滑鼠停在上面時暫停（動畫結束＝關閉，由 app.js 接 animationend） */
 #importNote .timer { position: absolute; left: 0; right: 0; bottom: 0; height: 3px; }

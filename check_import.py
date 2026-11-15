@@ -5,9 +5,14 @@ The import runs in a new temporary data folder, which is deleted at the end.
   uv run python check_import.py my-work.zip
   uv run python check_import.py mvt1.mxl mvt2.mxl sheet-practice.json
   uv run python check_import.py my-work.zip --json      # machine-readable result
+  uv run python check_import.py my-work.zip --bars 1:50-65
+      # all parts of movement 1, bars 50-65, as compact text (to look at an alignment suspect)
 
-Exit code: 0 = imported, no problems; 1 = imported, but prepare.py found problems; 2 = the import failed.
-Warnings (lines that start with "!", for example a missing license) do not change the exit code.
+It also checks that the parts line up bar by bar (check_alignment.py).
+
+Exit code: 0 = imported, no problems; 1 = imported, but prepare.py or the alignment check found problems;
+2 = the import failed.
+Warnings ("!", for example a missing license) and alignment suspects ("?") do not change the exit code.
 """
 
 from __future__ import annotations
@@ -22,12 +27,21 @@ from pathlib import Path
 TMP = tempfile.mkdtemp(prefix="sp-check-")
 os.environ["SP_DATA_DIR"] = TMP   # before omr is imported: it reads SP_DATA_DIR once
 
+import check_alignment  # noqa: E402
 import score_upload  # noqa: E402
 import works  # noqa: E402
 
 
 def main(argv: list[str]) -> int:
     as_json = "--json" in argv
+    bars = None
+    if "--bars" in argv:
+        k = argv.index("--bars")
+        if k + 1 >= len(argv):
+            print("--bars needs a range, for example 1:50-65")
+            return 2
+        bars = argv[k + 1]
+        argv = argv[:k] + argv[k + 2:]
     paths = [Path(a) for a in argv if a != "--json"]
     if not paths or any(a in ("-h", "--help") for a in argv):
         print(__doc__)
@@ -46,6 +60,18 @@ def main(argv: list[str]) -> int:
         xml = (pdir / "score.musicxml").read_text(encoding="utf-8")
         parts.append({"part": meta["part"], "bars": works.measure_count(pdir), "movements": xml.count('id="movement-'),
                       "rights": meta.get("rights", ""), "source": meta.get("source", "")})
+    if bars:
+        aligned = check_alignment.load_work(result["slug"])
+        try:
+            print(check_alignment.bars_text(aligned, bars))
+        except ValueError as e:
+            print(e)
+            return 2
+        return 0
+    alignment = result["alignment"]
+    if "error" in alignment:
+        alignment = {"problems": [{"kind": "error", "text": "the alignment check failed: " + alignment["error"]}],
+                     "warnings": [], "suspects": [], "coverage": []}
     out = {
         "ok": True,
         "work": result["renamed_from"] or result["work"],
@@ -57,6 +83,7 @@ def main(argv: list[str]) -> int:
         "problems": result["problems"],
         "warnings": [line.strip() for line in result["report"] if line.strip().startswith("!")],
         "report": result["report"],
+        "alignment": alignment,
     }
     if as_json:
         print(json.dumps(out, ensure_ascii=False, indent=2))
@@ -75,7 +102,10 @@ def main(argv: list[str]) -> int:
         print("Check:")
         for line in out["report"]:
             print(f"  {line.strip()}")
-    return 1 if out["problems"] else 0
+        print("Alignment:")
+        for line in check_alignment.report_lines(alignment):
+            print(f"  {line}")
+    return 1 if out["problems"] or alignment["problems"] else 0
 
 
 if __name__ == "__main__":

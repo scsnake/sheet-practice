@@ -279,6 +279,17 @@ check(rx["practice"] == "Violin II" and all(m.get("rights") == "OpenScore (CC0)"
 expect_error(lambda: su.import_example("../examples"), "沒有這個範例", "unknown example")
 
 check(rx["measures"] == 531 and rx["movements"] == 4, f"result counts: {rx['measures']} bars, {rx['movements']} movements")
+al = rx["alignment"]
+check(al["problems"] == [] and al["suspects"] == [] and len(al["coverage"]) == 4 and al["movement_starts"] == [1, 129, 238, 342],
+      f"example alignment: {al.get('problems')} {al.get('suspects')} {al.get('movement_starts')}")
+real_parts = su.check_alignment.check_parts
+su.check_alignment.check_parts = broken_check
+try:
+    rb = su.import_example("haydn-op76-no3")
+finally:
+    su.check_alignment.check_parts = real_parts
+check(rb["alignment"] == {"error": "ValueError: check failed"} and rb["problems"] == 0 and len(rb["pieces"]) == 4,
+      f"a broken alignment check does not fail the import: {rb['alignment']}")
 
 # 13. progress reports: read each file once, build each part, then check; re-import reads again
 seen: list[tuple[str, int, int]] = []

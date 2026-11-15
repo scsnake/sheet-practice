@@ -59,7 +59,9 @@ uv run python omr.py part.pdf "作品" "Violin II"
 選完就用預設值直接匯入並打開作品（弦樂五部；同一個資料夾的檔案＝各樂章；有總譜時用總譜），
 匯入超過 0.8 秒時，右下角顯示進度條與目前的步驟（上傳、讀取檔案、建立聲部、檢查、載入樂譜）。
 完成後右下角顯示摘要：作品、樂章數、小節數、聲部、練習聲部，以及 `prepare.py` 的檢查結果。
-摘要 15 秒後自動關閉，點一下也會關閉；檢查發現問題時不自動關閉。
+摘要也顯示各聲部是否逐小節對齊（`check_alignment.py`）：有聲部可能錯開 1–2 小節時，列出段落，點一下跳到那裡聽；
+記號太少、沒檢查到的段落列在「檢查報告」裡。
+摘要 15 秒後自動關閉，點一下也會關閉；檢查發現問題或可能錯開的段落時不自動關閉。
 之後要改聲部、檔案與順序、名稱、練習聲部、授權，按「設定 ▾」→「匯入設定…」，改完按「重新匯入」。
 ZIP 裡可以放 `sheet-practice.json` 指定這些設定，格式見 [docs/SCORES.md](docs/SCORES.md) 的 "Settings file"。
 
@@ -217,6 +219,7 @@ reduce_orchestra.py  把管樂／銅管等分部縮成一份「鋼琴式」兩�
 align.py         （實驗）用掃描頁的小節號碼與多小節休止數字對齊 OMR 結果
 server.py        FastAPI：上傳、辨識進度、作品合併／寫回、設定
 check_import.py  試匯入：在暫時的資料夾裡匯入 ZIP 或樂譜檔，印出結果（不動你的資料）
+check_alignment.py  檢查各聲部是否逐小節對齊：小節數、拍號，以及強弱記號等是否錯開 1–2 小節
 examples/        內建範例樂曲（授權允許自由散布；每個資料夾有 SOURCE.md）
 score_upload.py  網頁匯入總譜：保留上傳的 MusicXML／MXL／ZIP、算預設設定（或讀 sheet-practice.json）、呼叫 import_parts 匯入、重新匯入
 xmlsafe.py       所有 MusicXML 共用的 parser（樂譜檔不可信任：不展開實體、不讀外部檔案）

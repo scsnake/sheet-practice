@@ -337,6 +337,50 @@
     } catch (e) { /* 無痕／被擋：用伺服器的預設 */ }
   }
   // 匯入完成的摘要：15 秒後（倒數條的 CSS 動畫結束）或點一下就關；有問題時不自動關，要讓使用者看到
+  // 對齊檢查（check_alignment.py 的結果）。小節號用 app 的算法：每個樂章從 1 開始，弱起小節算第 1 小節
+  function alignPos(a, app) {
+    const st = a.movement_starts?.length ? a.movement_starts : [1];
+    let k = 0;
+    while (k + 1 < st.length && st[k + 1] <= app) k++;
+    return { mv: st.length > 1 ? `第 ${k + 1} 樂章` : "", k, bar: app - st[k] + 1 };
+  }
+  const alignWhere = (a, app) => { const p = alignPos(a, app); return `${p.mv}第 ${p.bar} 小節`; };
+  function alignRange(a, [from, to]) {
+    const p = alignPos(a, from), q = alignPos(a, to);
+    return p.k === q.k ? `${p.mv}第 ${p.bar}–${q.bar} 小節` : `${alignWhere(a, from)}到${alignWhere(a, to)}`;
+  }
+  const alignSuspect = (a, x) => `${x.part}：${alignRange(a, x.app_bars)}，可能${x.shift > 0 ? "早" : "晚"}了 ${Math.abs(x.shift)} 小節`;
+  const ALIGN_MARK = { light: "小節線", heavy: "粗小節線", repeat: "反覆記號", ending: "反覆結尾（房子）" };
+  function alignIssue(a, x) {
+    const counts = (c) => Object.entries(c).map(([n, v]) => `${n} ${v}`).join("、");
+    const at = x.app_bar ? `，第一個在${alignWhere(a, x.app_bar)}` : "";
+    switch (x.kind) {
+      case "movements": return `各聲部的樂章數不一樣：${counts(x.counts)}`;
+      case "bars": return `第 ${x.movement} 樂章各聲部的小節數不一樣：${counts(x.counts)}`;
+      case "time": return `${x.part} 有 ${x.count} 個小節的拍號和 ${x.against} 不一樣${at}（${x.got}／${x.want}）`;
+      case "key": return `${x.part} 有 ${x.count} 個小節的換調號和 ${x.against} 不一樣${at}`;
+      case "marks": return `${x.part} 有 ${x.count} 個小節的${ALIGN_MARK[x.mark] || x.mark}和 ${x.against} 不一樣${at}`;
+      case "short": return `${x.count} 個小節只有部分聲部比拍號短（${x.parts.join("、")}）${at}`;
+      case "weak": return `${x.part}：${x.marks} 個記號只有 ${x.shared} 個和其他聲部在同一小節，記號檢查對這個聲部不太可靠`;
+      case "single": return "只有一個聲部，沒有可以比對的";
+      default: return x.text;
+    }
+  }
+  function alignReport(a) {
+    if (!a) return [];
+    if (a.error) return [`對齊檢查失敗：${a.error}`];
+    const out = [...a.problems.map((x) => "✗ " + alignIssue(a, x)), ...a.warnings.map((x) => "! " + alignIssue(a, x)),
+      ...a.suspects.map((x) => "? " + alignSuspect(a, x))];
+    for (const c of a.coverage) {
+      const pct = c.played_bars ? Math.round(100 * c.checked_bars / c.played_bars) : 100;
+      out.push(`  ${c.part}：記號檢查涵蓋 ${pct}% 有音符的小節`
+        + (c.unchecked.length ? `；記號太少、沒檢查到：${c.unchecked.map((u) => alignRange(a, u.app_bars)).join("、")}` : ""));
+    }
+    if (!a.problems.length && !a.suspects.length) out.push("✓ 沒有發現錯開的聲部");
+    if (a.suspects.length || a.coverage.some((c) => c.unchecked.length)) out.push("", "可能錯開的段落和沒檢查到的段落：請開全部聲部聽一次。");
+    return out;
+  }
+  const alignProblems = (r) => (r.alignment && !r.alignment.error ? r.alignment.problems.length : 0);
   function showImportNote(r) {
     lastImport = r;
     const box = $("importNote"), el = $("importNoteText");
@@ -350,8 +394,24 @@
     if (r.config_file) el.append(div("line", `用了 ${r.config_file} 的設定`));
     el.append(div(`line check ${r.problems ? "bad" : notes ? "notes" : "ok"}`,
       r.problems ? `檢查發現 ${r.problems} 個問題` : notes ? `檢查沒有問題，有 ${notes} 個提醒` : "檢查沒有問題"));
-    box.classList.toggle("error", !!r.problems);
-    box.classList.toggle("sticky", !!r.problems);
+    // 對齊：問題（紅）、可能錯開（橘，前 3 處可以點一下跳過去）、沒有發現（綠）
+    const a = r.alignment, bad = alignProblems(r), sus = a && !a.error ? a.suspects : [];
+    if (a?.error) el.append(div("line check align notes", "對齊檢查失敗（見檢查報告）"));
+    else if (a) {
+      const unchecked = a.coverage.reduce((n, c) => n + c.unchecked.length, 0);
+      el.append(div(`line check align ${bad ? "bad" : sus.length ? "notes" : "ok"}`,
+        bad ? `對齊：${bad} 個問題` : sus.length ? `對齊：${sus.length} 處可能錯開，請聽聽看`
+          : "對齊：沒有發現錯開" + (unchecked ? `（${unchecked} 段記號太少，沒檢查到）` : "")));
+      for (const x of sus.slice(0, 3)) {
+        const b = document.createElement("button");
+        b.className = "suspect"; b.textContent = alignSuspect(a, x); b.title = "跳到這裡";
+        b.addEventListener("click", () => { if (S.slug === r.slug) gotoMeasure(x.app_bars[0] - 1); });   // 跳過去，摘要一起關
+        el.append(b);
+      }
+      if (sus.length > 3) el.append(div("line", `還有 ${sus.length - 3} 處，見檢查報告`));
+    }
+    box.classList.toggle("error", !!(r.problems || bad));
+    box.classList.toggle("sticky", !!(r.problems || bad || sus.length || a?.error));   // 對齊檢查失敗＝沒有檢查過，也要看到
     const bar = box.querySelector(".timer i");   // 倒數重新開始（上一個摘要還沒關時）
     bar.style.animation = "none"; void bar.offsetWidth; bar.style.animation = "";
     box.classList.remove("hidden");
@@ -361,8 +421,10 @@
   $("importNote").addEventListener("click", hideImportNote);   // 點一下就關；按鈕先做自己的事，再一起關
   $("importNoteReport").addEventListener("click", () => {
     if (!lastImport) return;
-    $("imDoneTitle").textContent = lastImport.problems ? `檢查發現 ${lastImport.problems} 個問題` : "檢查沒有問題";
-    $("imReport").textContent = `${lastImport.work}\n用到的檔案：\n${lastImport.files_used.map((f) => "  " + f).join("\n")}\n\n` + lastImport.report.join("\n");
+    const n = lastImport.problems + alignProblems(lastImport);
+    $("imDoneTitle").textContent = n ? `檢查發現 ${n} 個問題` : lastImport.alignment?.error ? "對齊檢查失敗：沒有檢查各聲部是否對齊" : "檢查沒有問題";
+    $("imReport").textContent = `${lastImport.work}\n用到的檔案：\n${lastImport.files_used.map((f) => "  " + f).join("\n")}\n\n`
+      + lastImport.report.join("\n") + (lastImport.alignment ? "\n\n各聲部對齊：\n" + alignReport(lastImport.alignment).join("\n") : "");
     $("importDoneDlg").showModal();
   });
   $("importNoteSettings").addEventListener("click", () => lastImport && openImportSettings(lastImport.import));

@@ -51,7 +51,7 @@ You need Python 3.12 or later and [uv](https://docs.astral.sh/uv/).
    To import MusicXML, MXL or ZIP files in the browser, see "Import in the browser" there.
 2. If you use a coding agent, give it [docs/AGENT_SCORE_GUIDE.md](docs/AGENT_SCORE_GUIDE.md).
    It can find a score with you, check it, and package it as a ZIP with default settings.
-3. Check a ZIP before you import it. This changes nothing in your data:
+3. Check a ZIP before you import it. It also checks that the parts line up bar by bar. This changes nothing in your data:
 
    ```sh
    uv run python check_import.py my-work.zip

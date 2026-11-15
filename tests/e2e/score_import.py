@@ -234,6 +234,7 @@ with tempfile.TemporaryDirectory() as td, sync_playwright() as p:
     check("G: four movements in the movement menu", pg.locator("#sectionSelect option").count() == 4, str(pg.locator("#sectionSelect option").count()))
     check("G: practice part Violin II", practice_xml_id(pg) == part_xml_id(g, "Violin II"), note)
     check("G: summary counts movements and bars", "4 個樂章・531 小節" in note, note)
+    check("G: alignment line, no suspects", "對齊：沒有發現錯開" in note and pg.locator("#importNoteText .suspect").count() == 0, note)
     pg.click("#importNoteText")
     check("G: a click closes the summary", pg.is_hidden("#importNote"))
 
@@ -281,7 +282,56 @@ with tempfile.TemporaryDirectory() as td, sync_playwright() as p:
     check("I: load failure reported, not an import failure", "打開作品失敗" in status and "匯入失敗" not in status, status)
     check("I: the work exists once", work_info(pg, "Import-I") is not None and work_info(pg, "Import-I-2") is None)
 
-    for slug in ("Import-A2", "Import-C", "Import-B", "Import-B-2", "Import-F", "Import-H", "Import-I", gslug):
+    # J. the alignment check found a suspect (put into the server's reply): the summary stays, lists it,
+    #    and a click on it goes to that bar; the check report lists it too
+    (td / "suspect.musicxml").write_text(movement("Import J", MV_44))
+    # Chromium does not give Playwright the body of a multipart upload, so a route cannot pass it on.
+    # Change the reply in the page instead: the next import reply gets one suspect.
+    pg.evaluate("""() => {
+      const text = Object.getOwnPropertyDescriptor(XMLHttpRequest.prototype, "responseText");
+      const open = XMLHttpRequest.prototype.open;
+      XMLHttpRequest.prototype.open = function (m, u, ...rest) { this.__url = u; return open.call(this, m, u, ...rest); };
+      Object.defineProperty(XMLHttpRequest.prototype, "responseText", { configurable: true, get() {
+        const t = text.get.call(this);
+        if (!/\\/api\\/imports\\?progress=/.test(this.__url || "") || this.status !== 200) return t;
+        const r = JSON.parse(t);
+        if (window.__alignError) r.alignment = { error: "RuntimeError: test" };
+        else r.alignment.suspects = [{ part: "Violin I", from: "1:5", to: "1:8", app_bars: [5, 8], shift: 1,
+                                       score: 4, marks_fit_shifted: 4, marks_fit_in_place: 0 }];
+        return JSON.stringify(r);
+      } });
+    }""")
+    pick_files(pg, [str(td / "suspect.musicxml")])
+    note = wait_note(pg, "Import J")
+    wait_loaded(pg, "Import-J", 12)
+    suspect = "Violin I：第 5–8 小節，可能早了 1 小節"
+    check("J: summary shows the suspect", "對齊：1 處可能錯開" in note and suspect in note, note)
+    check("J: summary stays open", "sticky" in pg.get_attribute("#importNote", "class"), pg.get_attribute("#importNote", "class"))
+    pg.evaluate("document.getElementById('importNoteReport').click()")
+    report = pg.inner_text("#imReport")
+    check("J: check report lists the suspect", "各聲部對齊" in report and "? " + suspect in report, report[-400:])
+    pg.keyboard.press("Escape")
+    pg.evaluate("document.getElementById('importNote').classList.remove('hidden')")
+    pg.click("#importNoteText .suspect")
+    pg.wait_for_timeout(500)
+    bar = pg.evaluate("SP.steps[SP.pos].measure + 1")
+    check("J: a click on the suspect goes to its bar", bar == 5 and pg.is_hidden("#importNote"), f"bar {bar}")
+
+    # K. the alignment check failed on the server: the import is shown, but not as checked and clean
+    (td / "alignerror.musicxml").write_text(movement("Import K", MV_44))
+    pg.evaluate("window.__alignError = true")
+    pick_files(pg, [str(td / "alignerror.musicxml")])
+    note = wait_note(pg, "Import K")
+    wait_loaded(pg, "Import-K", 12)
+    check("K: summary says the alignment check failed", "對齊檢查失敗" in note, note)
+    check("K: summary stays open", "sticky" in pg.get_attribute("#importNote", "class"), pg.get_attribute("#importNote", "class"))
+    pg.evaluate("document.getElementById('importNoteReport').click()")
+    title = pg.inner_text("#imDoneTitle")
+    check("K: report title is not 'no problems'", "對齊檢查失敗" in title and title != "檢查沒有問題", title)
+    pg.keyboard.press("Escape")
+    pg.evaluate("window.__alignError = false")
+
+    for slug in ("Import-A2", "Import-C", "Import-B", "Import-B-2", "Import-F", "Import-H", "Import-I", "Import-J", "Import-K", gslug):
         for x in (work_info(pg, slug) or {"parts": []})["parts"]:
             pg.request.delete(f"{URL}api/pieces/{x['id']}")
     left = [w["slug"] for w in pg.request.get(URL + "api/works").json() if w["slug"].startswith("Import")]
