@@ -60,7 +60,7 @@
         <h4>作品</h4>
         <div class="line">
           <select id="workSelect" title="選擇作品"></select>
-          <button id="btnUpload" class="btn small" title="選一個 ZIP、幾個 MusicXML／MXL，或 PDF／圖片；用預設值直接匯入">＋ 匯入樂譜</button>
+          <button id="btnUpload" class="btn small" title="選一個 ZIP、幾個 MusicXML／MXL，或 PDF／圖片；用預設值直接匯入。也可以把檔案拖進頁面">＋ 匯入樂譜</button>
           <input id="importInput" type="file" multiple hidden accept=".zip,.musicxml,.xml,.mxl,.json,.pdf,.png,.jpg,.jpeg,.tif,.tiff,.bmp,.webp">
           <button id="btnExample" class="btn small hidden" title="匯入 repo 附的範例樂曲（授權允許自由散布）">＋ 範例</button>
           <button id="btnImportSettings" class="btn small" disabled title="這個作品的匯入設定：聲部、樂章檔案與順序、名稱、授權">匯入設定…</button>
@@ -122,7 +122,7 @@
   <div id="emptyState" class="hidden">
     <p>還沒有作品。</p>
     <button id="emptyImport" class="btn primary">＋ 匯入樂譜</button>
-    <p class="muted">選一個 ZIP、幾個 MusicXML／MXL，或 PDF／圖片；選完就直接匯入。找樂譜的方法見 docs/SCORES.md。</p>
+    <p class="muted">選一個 ZIP、幾個 MusicXML／MXL，或 PDF／圖片，也可以直接拖進這一頁；選完就直接匯入。找樂譜的方法見 docs/SCORES.md。</p>
     <div id="emptyExamples" class="hidden"><p>或先試內建的範例（授權允許自由散布）：</p><div class="exampleButtons"></div></div>
   </div>
   <div id="scoreWrap">
@@ -211,5 +211,8 @@
 <script src="/static/vendor/0200_FluidR3_GM_sf2_file.js"></script>
 <script src="/static/vendor/0490_FluidR3_GM_sf2_file.js"></script>
 <script src="/static/app.js"></script>
+<div id="dropOverlay" class="hidden" aria-hidden="true">
+  <div class="box"><div class="big">放開就匯入</div><div class="small">ZIP、MusicXML／MXL，或 PDF／圖片</div></div>
+</div>
 </body>
 </html>

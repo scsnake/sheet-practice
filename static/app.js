@@ -225,6 +225,36 @@
   $("btnUpload").addEventListener("click", pickImport);
   $("emptyImport").addEventListener("click", pickImport);
   $("importInput").addEventListener("change", () => { const files = [...$("importInput").files]; if (files.length) importFiles(files); });
+  // 把檔案拖進頁面就匯入（和「＋ 匯入樂譜」同一條路）。只在拖的是檔案時顯示提示；瀏覽器不可以自己打開拖進來的檔案
+  const DROP_RE = new RegExp(`(${$("importInput").accept.split(",").map((x) => x.trim().replace(".", "\\.")).join("|")})$`, "i");
+  const dragsFiles = (e) => [...(e.dataTransfer?.types || [])].includes("Files");
+  let dragDepth = 0;
+  const showDrop = (on) => { $("dropOverlay").classList.toggle("hidden", !on); if (!on) dragDepth = 0; };
+  window.addEventListener("dragenter", (e) => {
+    if (!dragsFiles(e)) return;
+    e.preventDefault();
+    dragDepth++;
+    if (!importing && !document.querySelector("dialog[open]")) showDrop(true);
+  });
+  window.addEventListener("dragover", (e) => {
+    if (!dragsFiles(e)) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = importing || document.querySelector("dialog[open]") ? "none" : "copy";
+  });
+  window.addEventListener("dragleave", (e) => { if (dragsFiles(e) && --dragDepth <= 0) showDrop(false); });
+  window.addEventListener("drop", (e) => {
+    if (!dragsFiles(e)) return;
+    e.preventDefault();
+    showDrop(false);
+    if (importing || document.querySelector("dialog[open]")) return;
+    const items = [...(e.dataTransfer.items || [])];
+    if (items.some((it) => it.webkitGetAsEntry?.()?.isDirectory)) { setStatus("資料夾不能直接拖進來：請先壓成 ZIP，再拖 ZIP 進來。", true); return; }
+    const files = [...e.dataTransfer.files];
+    const bad = files.filter((f) => !DROP_RE.test(f.name));
+    if (!files.length) return;
+    if (bad.length) { setStatus(`不支援的檔案：${bad.map((f) => f.name).join("、")}（可以用 ZIP、MusicXML／MXL、PDF 或圖片）`, true); return; }
+    importFiles(files);
+  });
   async function importFiles(files) {
     const scores = files.filter((f) => SCORE_RE.test(f.name) || CONFIG_RE.test(f.name));
     if (scores.length === files.length) return importScores(files);

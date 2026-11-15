@@ -90,6 +90,9 @@ The app can do steps 2–4 for you.
 1. Open 設定 ▾, then click ＋ 匯入樂譜.
 2. Select a `.zip`, or one or more `.musicxml`, `.xml` or `.mxl` files.
 
+You can also drag the files onto the page. A "放開就匯入" (drop to import) overlay shows. Release the files to import them.
+For a folder, make a ZIP first.
+
 The app imports at once with default settings, and opens the work.
 
 - If the import takes more than 0.8 s, a progress bar shows at the bottom right.

@@ -5,7 +5,7 @@
 from pathlib import Path
 from playwright.sync_api import sync_playwright
 from common import WORK
-import io, json, os, sys, tempfile, time, zipfile
+import base64, io, json, os, sys, tempfile, time, zipfile
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "fixtures"))
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
@@ -71,6 +71,23 @@ def pick_files(pg, files):
     with pg.expect_file_chooser() as fc:
         pg.click("#btnUpload")
     fc.value.set_files(files)
+
+def drag(pg, kind, files=(), text=None, target="#main"):
+    """Send one drag event (dragenter, dragover, dragleave or drop) to the page, as a file drag from the desktop does.
+    Returns True when the page stopped the browser's own action (for a drop: opening the file)."""
+    return pg.evaluate("""([kind, files, text, sel]) => {
+      const dt = new DataTransfer();
+      for (const [name, b64] of files) dt.items.add(new File([Uint8Array.from(atob(b64), (c) => c.charCodeAt(0))], name));
+      if (text) dt.setData("text/plain", text);
+      const ev = new DragEvent(kind, { dataTransfer: dt, bubbles: true, cancelable: true });
+      document.querySelector(sel).dispatchEvent(ev);
+      return ev.defaultPrevented;
+    }""", [kind, [[n, base64.b64encode(b).decode()] for n, b in files], text, target])
+
+def drop_files(pg, files):
+    drag(pg, "dragenter", files)
+    drag(pg, "dragover", files, target="#dropOverlay")
+    return drag(pg, "drop", files, target="#dropOverlay")
 
 def wait_note(pg, text, timeout=120000):
     pg.wait_for_function(f"!document.getElementById('importNote').classList.contains('hidden') && "
@@ -331,7 +348,39 @@ with tempfile.TemporaryDirectory() as td, sync_playwright() as p:
     pg.keyboard.press("Escape")
     pg.evaluate("window.__alignError = false")
 
-    for slug in ("Import-A2", "Import-C", "Import-B", "Import-B-2", "Import-F", "Import-H", "Import-I", "Import-J", "Import-K", gslug):
+    # L. drag and drop: the overlay shows only for files; a dropped ZIP is imported like a picked one;
+    #    other file types, drops during a dialog and the browser's own "open the file" are stopped
+    zl = io.BytesIO()
+    write_zip(zl, {f"Import L/mvt{i}.musicxml": movement("Import L", mv, first)
+                   for i, (mv, first) in enumerate(((MV_44, 1), (MV_38, 13)), start=1)})
+    zl = zl.getvalue()
+    drag(pg, "dragenter", text="some text")
+    check("L: dragging text shows no overlay", pg.is_hidden("#dropOverlay"))
+    drag(pg, "dragenter", [("dropped.zip", zl)])
+    check("L: dragging a file shows the overlay", pg.is_visible("#dropOverlay") and "放開就匯入" in pg.inner_text("#dropOverlay"))
+    drag(pg, "dragleave", [("dropped.zip", zl)])
+    check("L: leaving the page hides the overlay", pg.is_hidden("#dropOverlay"))
+    stopped = drop_files(pg, [("dropped.zip", zl)])
+    check("L: the browser does not open the dropped file", stopped)
+    check("L: overlay hidden after the drop", pg.is_hidden("#dropOverlay"))
+    note = wait_note(pg, "Import L")
+    wait_loaded(pg, "Import-L", 20)
+    check("L: dropped ZIP imported and opened", "已匯入" in note and "2 個樂章・20 小節" in note, note)
+    pg.click("#importNoteText")
+    n_works = len(pg.request.get(URL + "api/works").json())
+    drop_files(pg, [("notes.txt", b"not a score")])
+    pg.wait_for_timeout(500)
+    status = pg.inner_text("#status") if pg.is_visible("#status") else ""
+    check("L: other file types are refused", "不支援的檔案：notes.txt" in status, status)
+    pg.evaluate("document.getElementById('importNoteReport').click()")   # a dialog is open
+    drag(pg, "dragenter", [("dropped.zip", zl)])
+    check("L: no overlay while a dialog is open", pg.is_hidden("#dropOverlay"))
+    drop_files(pg, [("dropped.zip", zl)])
+    pg.wait_for_timeout(1500)
+    check("L: no import while a dialog is open", len(pg.request.get(URL + "api/works").json()) == n_works)
+    pg.keyboard.press("Escape")
+
+    for slug in ("Import-A2", "Import-C", "Import-B", "Import-B-2", "Import-F", "Import-H", "Import-I", "Import-J", "Import-K", "Import-L", gslug):
         for x in (work_info(pg, slug) or {"parts": []})["parts"]:
             pg.request.delete(f"{URL}api/pieces/{x['id']}")
     left = [w["slug"] for w in pg.request.get(URL + "api/works").json() if w["slug"].startswith("Import")]
