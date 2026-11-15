@@ -1,18 +1,19 @@
 # Instructions for coding agents
 
 sheet-practice is a local play-along app for string parts. The server is `server.py`. The frontend is `static/`.
-The repo contains no scores, so a new user must prepare scores first.
+The repo contains one example score in `examples/` (CC0, see its `SOURCE.md`). For other works, a user must prepare scores first.
 
 ## Rules
 
 1. Do not add scores or derived files to this repo. `docs/SCORES.md` lists these file types.
+   The only exception is `examples/`. Add a score there only when its license allows free sharing, and only with a `SOURCE.md`.
 2. Do not bypass a login, a paywall or a download limit. Do not use tools that do this.
 3. Do not state that a file is legal to use. Report what the source says, and let the user decide.
 4. Stop if a file has no stated license. Tell the user, and do not import it.
 
 ## Help a user add a work
 
-Read `docs/SCORES.md` first. Then do these steps:
+Read `docs/SCORES.md` first. [docs/AGENT_SCORE_GUIDE.md](docs/AGENT_SCORE_GUIDE.md) has the detailed steps, including the ZIP package. In short:
 
 1. Ask for the work, the parts and the user's country.
 2. Search the sources in `docs/SCORES.md`, in table order.
@@ -44,4 +45,4 @@ The server has no authentication, and its API can change and delete scores.
 - Use `xmlsafe.PARSER` for all MusicXML. Scores come from the web, so treat them as untrusted.
 - Use `omr.DATA_DIR` for all data paths. `SP_DATA_DIR` sets its value.
 - Comments and UI text are in Traditional Chinese (zh-TW).
-- The e2e tests use only synthetic works. Do not add tests that need a real score.
+- The e2e tests use synthetic works and the bundled example in `examples/`. Do not add tests that need any other real score.

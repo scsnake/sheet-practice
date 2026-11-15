@@ -81,6 +81,7 @@ def piece_info(pdir: Path, meta: dict) -> dict:
         "status": omr.read_status(pdir),
         "pages": pages,
         "measures": measure_count(pdir),
+        "import": meta.get("import"),   # 網頁匯入的聲部：匯入紀錄的代碼（可以在「匯入設定」裡調整）
     }
 
 

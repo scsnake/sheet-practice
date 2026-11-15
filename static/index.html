@@ -60,7 +60,10 @@
         <h4>作品</h4>
         <div class="line">
           <select id="workSelect" title="選擇作品"></select>
-          <button id="btnUpload" class="btn small" title="上傳分譜（PDF / 圖片 / MusicXML）">＋ 上傳分譜</button>
+          <button id="btnUpload" class="btn small" title="選一個 ZIP、幾個 MusicXML／MXL，或 PDF／圖片；用預設值直接匯入">＋ 匯入樂譜</button>
+          <input id="importInput" type="file" multiple hidden accept=".zip,.musicxml,.xml,.mxl,.json,.pdf,.png,.jpg,.jpeg,.tif,.tiff,.bmp,.webp">
+          <button id="btnExample" class="btn small hidden" title="匯入 repo 附的範例樂曲（授權允許自由散布）">＋ 範例</button>
+          <button id="btnImportSettings" class="btn small" disabled title="這個作品的匯入設定：聲部、樂章檔案與順序、名稱、授權">匯入設定…</button>
           <button id="btnManage" class="btn small" title="管理作品與聲部">管理</button>
           <a id="downloadXml" class="btn small" href="#" download title="下載目前作品的 MusicXML">⬇ MusicXML</a>
         </div>
@@ -101,6 +104,12 @@
 </header>
 
 <div id="status" class="status hidden"></div>
+<div id="importNote" class="status hidden">
+  <span id="importNoteText"></span>
+  <button id="importNoteReport" class="btn small">檢查報告</button>
+  <button id="importNoteSettings" class="btn small">匯入設定…</button>
+  <button id="importNoteClose" class="btn small" title="關閉">×</button>
+</div>
 <div id="errorBar" class="status errbar hidden">
   <span id="errorSummary"></span>
   <button id="prevErr" class="btn small" title="上一個拍數不符的小節">◀</button>
@@ -116,6 +125,12 @@
 <div id="nowChip" class="hidden" title="顯示工具列"></div>
 
 <main id="main">
+  <div id="emptyState" class="hidden">
+    <p>還沒有作品。</p>
+    <button id="emptyImport" class="btn primary">＋ 匯入樂譜</button>
+    <p class="muted">選一個 ZIP、幾個 MusicXML／MXL，或 PDF／圖片；選完就直接匯入。找樂譜的方法見 docs/SCORES.md。</p>
+    <div id="emptyExamples" class="hidden"><p>或先試內建的範例（授權允許自由散布）：</p><div class="exampleButtons"></div></div>
+  </div>
   <div id="scoreWrap">
     <div id="score"></div>
     <div id="overlay"></div>
@@ -123,31 +138,25 @@
   <aside id="pages" class="hidden"></aside>
 </main>
 
-<dialog id="uploadDlg">
-  <h3>上傳分譜</h3>
-  <p><label>檔案 <input id="fileInput" type="file" multiple accept=".pdf,.png,.jpg,.jpeg,.tif,.tiff,.bmp,.webp,.musicxml,.xml,.mxl,.zip"></label></p>
-  <p class="muted">MusicXML／MXL／ZIP 可以一次選多個檔案（每個檔案一個樂章），下一步選要匯入的聲部。PDF／圖片一次一個，會用 OMR 辨識。</p>
-  <p><label>作品名稱 <input id="upWork" type="text" list="workNames" placeholder="例如 弦樂四重奏 第 1 號" size="28"></label>
-     <datalist id="workNames"></datalist></p>
-  <p><label>聲部名稱 <input id="upPart" type="text" list="partNames" placeholder="例如 Violin II" size="28"></label>
-     <datalist id="partNames"><option value="Violin I"><option value="Violin II"><option value="Viola"><option value="Cello"><option value="Contrabass"></datalist></p>
-  <p class="muted">同一「作品名稱」下的多個分譜會合併成一份多聲部總譜（例如四重奏四行）。</p>
-  <form method="dialog"><button class="btn" value="cancel">取消</button> <button id="doUpload" class="btn primary" value="ok">上傳並辨識</button></form>
-</dialog>
+<datalist id="workNames"></datalist>
 
 <dialog id="importDlg">
-  <h3>匯入總譜：選擇聲部</h3>
+  <h3>匯入設定</h3>
+  <p class="muted" id="imIntro">改好後按「重新匯入」：這次匯入的聲部會換成新的。</p>
   <p><label>作品名稱 <input id="imWork" type="text" list="workNames" size="32"></label></p>
   <p id="imWorkNote" class="muted"></p>
-  <h4>檔案（＝樂章，由上到下接成一份譜）</h4>
+  <h4>檔案（勾選的檔案＝樂章，由上到下接成一份譜）</h4>
   <ol id="imFiles"></ol>
   <p id="imSkipped" class="muted"></p>
   <h4>聲部</h4>
   <table id="imParts"><thead><tr><th>匯入</th><th>總譜裡的名稱</th><th>樂章數</th><th>匯入後的名稱</th></tr></thead><tbody></tbody></table>
-  <p><label>授權 <input id="imRights" type="text" size="16" placeholder="例如 CC0-1.0"></label>
-     <label>來源 <input id="imSource" type="text" size="28" placeholder="下載網址"></label></p>
+  <p><label>練習聲部 <select id="imPractice"></select></label> <span class="muted">打開作品時預設的練習聲部；之後在「聲部」列點名稱也可以換</span></p>
+  <p><label>授權 <input id="imRights" type="text" size="24"></label>
+     <label>來源 <input id="imSource" type="text" size="32"></label></p>
+  <p class="muted">授權、來源空白時用檔案裡寫的；各檔案不一樣時，每個檔案的值都會記下來。</p>
   <p id="imWarn" class="warn"></p>
-  <form method="dialog"><button class="btn" value="cancel">取消</button> <button id="doImport" class="btn primary" value="ok">匯入</button></form>
+  <form method="dialog"><a id="imConfig" class="btn" download="sheet-practice.json" title="存成 sheet-practice.json；放進 ZIP，下次匯入就直接用這些設定">下載設定檔</a>
+    <button class="btn" value="cancel">取消</button> <button id="doImport" class="btn primary" value="ok">重新匯入</button></form>
 </dialog>
 
 <dialog id="importDoneDlg">
@@ -177,7 +186,7 @@
   </ul>
   <p>紅色小節 = 該聲部的音符時值加總與拍號不符，很可能是辨識錯誤；粉紅 = 空小節。紅色小節在播放時會被拉長到最長聲部的長度，各聲部在該小節內對不齊，修正後即恢復。</p>
   <p>各聲部小節數不一致多半是「多小節休止」只被認成一小節：在修正模式選該小節的休止符，按 <b>I</b> 補上缺的小節數；多認的小節用 <b>X</b> 刪除。可用拍號變換（樂章交界）核對各聲部是否對齊。</p>
-  <p>辨識錯誤較多時：下載 MusicXML → 用 MuseScore Studio 修正 → 另存 MusicXML → 重新上傳（同作品、同聲部名稱）。</p>
+  <p>辨識錯誤較多時：下載 MusicXML → 用 MuseScore Studio 修正 → 另存 MusicXML → 用「＋ 匯入樂譜」匯入（會建立新作品「名稱 (2)」；確認沒問題後，在「管理」裡刪掉舊的）。</p>
   <form method="dialog"><button class="btn">關閉</button></form>
 </dialog>
 

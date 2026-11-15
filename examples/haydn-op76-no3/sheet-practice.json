@@ -1,0 +1,12 @@
+{
+  "work": "Haydn: String Quartet Op. 76 No. 3 (Emperor)",
+  "files": ["sq20428156.mxl"],
+  "parts": [
+    {"name": "Violin 1", "display": "Violin I"},
+    {"name": "Violin 2", "display": "Violin II"},
+    {"name": "Viola", "display": "Viola"},
+    {"name": "Violoncello", "display": "Cello"}
+  ],
+  "practice": "Violin II",
+  "source": "https://github.com/OpenScore/StringQuartets/blob/e5a625997db6cf83816752bc3ffa505b77a4d3d9/scores/Haydn,_Joseph/String_Quartet_in_C_major,_Hob.III77,_Op.76_No.3/sq20428156.mxl (mirror of http://musescore.com/user/37221589/scores/20428156)"
+}

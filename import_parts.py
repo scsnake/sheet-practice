@@ -91,11 +91,28 @@ def extract_part(root, part_el, tempos: dict[int, list]):
     return part
 
 
+def movement_starts(measures) -> list[int]:
+    """一個檔案裡各樂章開頭的小節序號（第一個一定是 0）。
+
+    OpenScore 的弦樂四重奏是整首一個檔。樂章交界的樣子：前一小節是終止線（light-heavy）而且小節號大於 1，
+    這一小節的小節號重新從 0（弱起）或 1 開始。只看終止線不夠：反覆記號也常用同樣的線。
+    """
+    starts = [0]
+    for i in range(1, len(measures)):
+        prev = measures[i - 1]
+        style = prev.findtext("barline/bar-style")
+        prev_num = prev.get("number", "")
+        if measures[i].get("number") in ("0", "1") and style == "light-heavy" and prev_num.isdigit() and int(prev_num) > 1:
+            starts.append(i)
+    return starts
+
+
 def build_part_score(files: list[Path], pattern: str, display_name: str) -> bytes:
     roots = [load_root(f) for f in files]
     out = None
     main = None
-    for mvt, (f, root) in enumerate(zip(files, roots), start=1):
+    mvt = 0
+    for f, root in zip(files, roots):
         part_el, found_name = find_part(root, pattern)
         if part_el is None:
             raise ValueError(f"{f.name} 裡找不到聲部 {pattern!r}；有：{[n for _, n in part_names(root)]}")
@@ -111,13 +128,16 @@ def build_part_score(files: list[Path], pattern: str, display_name: str) -> byte
             etree.SubElement(sp, "part-name").text = display_name
             main = etree.SubElement(out, "part", id="P1")
         measures = part.findall("measure")
-        if measures:  # 標記樂章開頭（前端用來分樂章顯示；MuseScore 匯出的換頁記號太多，不能拿來當樂章邊界）
-            measures[0].set("id", f"movement-{mvt}")
-            if main.findall("measure"):
-                pr = measures[0].find("print")
+        # 標記樂章開頭（前端用來分樂章顯示；MuseScore 匯出的換頁記號太多，不能拿來當樂章邊界）。
+        # 每個檔案至少一個樂章；整首一個檔時，用小節號重新開始的地方分樂章
+        for k in movement_starts(measures) if measures else []:
+            mvt += 1
+            measures[k].set("id", f"movement-{mvt}")
+            if main.findall("measure") or k > 0:
+                pr = measures[k].find("print")
                 if pr is None:
                     pr = etree.Element("print")
-                    measures[0].insert(0, pr)
+                    measures[k].insert(0, pr)
                 pr.set("new-page", "yes")
         for m in measures:
             main.append(m)

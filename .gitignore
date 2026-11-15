@@ -16,3 +16,7 @@ __pycache__/
 *.mid
 *.midi
 *.krn
+
+# The one exception: examples/ holds scores whose license allows free sharing.
+# Each folder has a SOURCE.md that records the source and the license.
+!examples/**/*.mxl

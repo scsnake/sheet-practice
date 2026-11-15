@@ -15,6 +15,15 @@ This file does not change the license of any component.
 The OSMD file refers to `opensheetmusicdisplay.min.js.LICENSE.txt`.
 The npm package 1.9.0 does not contain that file, so this repo cannot include it.
 
+## Example score in `examples/`
+
+| Folder | Content | Source | License |
+| --- | --- | --- | --- |
+| `examples/haydn-op76-no3/` | Haydn, String Quartet Op. 76 No. 3, MusicXML (`sq20428156.mxl`, not changed) | [OpenScore String Quartets](https://github.com/OpenScore/StringQuartets), commit `e5a6259` | CC0 1.0 Universal (the repo's `LICENSE.txt`; the file states "OpenScore (CC0)") |
+
+Transcribed and maintained by contributors to [OpenScore String Quartets](https://musescore.com/openscore-string-quartets).
+`SOURCE.md` in the folder has the full record.
+
 ## Python dependencies
 
 `uv.lock` lists all Python dependencies. These two have the strongest conditions:

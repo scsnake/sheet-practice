@@ -1,4 +1,5 @@
-"""Checks for score_upload.py (staging, ZIP safety, part choice, import) on synthetic demo movements.
+"""Checks for score_upload.py (default import, folder choice, sheet-practice.json, re-import, ZIP safety)
+on synthetic demo movements.
 
   uv run python tests/test_score_upload.py
 """
@@ -6,9 +7,12 @@
 from __future__ import annotations
 
 import io
+import json
 import os
+import shutil
 import sys
 import tempfile
+import time
 import zipfile
 from pathlib import Path
 
@@ -18,8 +22,9 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / "tests" / "fixtures"))
 
+import import_parts  # noqa: E402
 import make_demo  # noqa: E402
-import score_upload  # noqa: E402
+import score_upload as su  # noqa: E402
 import works  # noqa: E402
 import xmlsafe  # noqa: E402
 
@@ -43,10 +48,19 @@ def expect_error(fn, text: str, msg: str) -> None:
 
 MV1 = make_demo.mv("Allegro", 4, 4, 120, 12, 0)
 MV2 = make_demo.mv("Scherzo", 3, 8, 116, 8, 2)
+STRINGS = [s[0] for s in make_demo.STRINGS]   # part names in the demo scores: Violin 1 … Contrabass
 
 
-def movement(mv: dict, first_bar: int = 1) -> bytes:
-    return make_demo.movement_xml("Upload Test", mv, first_bar, [], False).encode()
+def movement(mv: dict, first_bar: int = 1, work: str = "Upload Test", piano: bool = False, rests=()) -> bytes:
+    return make_demo.movement_xml(work, mv, first_bar, list(rests), piano).encode()
+
+
+def single_part(xml: bytes, name: str) -> bytes:
+    """One instrument's file, cut from a demo movement (like a per-instrument folder)."""
+    with tempfile.TemporaryDirectory() as td:
+        f = Path(td) / "m.musicxml"
+        f.write_bytes(xml)
+        return import_parts.build_part_score([f], f"^{name}$", name)
 
 
 def zip_bytes(entries: dict[str, bytes]) -> io.BytesIO:
@@ -58,11 +72,24 @@ def zip_bytes(entries: dict[str, bytes]) -> io.BytesIO:
     return buf
 
 
-def staged_names(token: str) -> set[str]:
-    return {p.name for p in (score_upload.STAGE_DIR / token).iterdir()}
+def parts_of(work: str) -> list[str]:
+    return [m["part"] for _, m in works.pieces_of(works.slug(work))]
 
 
-# 1. ZIP: only MusicXML is kept, and no ZIP path is used on disk
+def bars_of(work: str) -> list[int]:
+    return [works.measure_count(p) for p, _ in works.pieces_of(works.slug(work))]
+
+
+def first_beat_type(work: str) -> str:
+    p = works.pieces_of(works.slug(work))[0][0]
+    return xmlsafe.etree.parse(str(p / "score.musicxml"), xmlsafe.PARSER).getroot().findtext("part/measure/attributes/time/beat-type")
+
+
+def records() -> list[str]:
+    return sorted(p.name for p in su.IMPORTS_DIR.iterdir()) if su.IMPORTS_DIR.exists() else []
+
+
+# 1. ZIP safety; the default import runs at once
 evil = zip_bytes({
     "Score/mvt10.musicxml": movement(MV2, 13),
     "Score/mvt2.musicxml": movement(MV1),
@@ -72,108 +99,185 @@ evil = zip_bytes({
     "Score/.hidden.musicxml": movement(MV1),
     "readme.txt": b"hello",
 })
-s = score_upload.stage([("scores.zip", evil)])
-labels = [f["label"] for f in s["files"]]
-check(labels == ["scores.zip/Score/mvt2.musicxml", "scores.zip/Score/mvt10.musicxml"], f"zip keeps 2 scores, natural order: {labels}")
-check(len(s["skipped"]) == 5, f"zip skips 5 other entries: {s['skipped']}")
-check(not (Path(DATA).parent / "escape.musicxml").exists() and not Path("/abs.musicxml").exists(), "no file is written outside the stage folder")
-check(staged_names(s["token"]) == {"manifest.json", "001-mvt10.musicxml", "002-mvt2.musicxml"}, f"stored names: {sorted(staged_names(s['token']))}")
-parts = {p["name"]: p for p in s["parts"]}
-check(set(parts) == {"Flute", "Violin 1", "Violin 2", "Viola", "Cello", "Contrabass"}, f"parts listed: {list(parts)}")
-check([p["name"] for p in s["parts"] if p["selected"]] == ["Violin 1", "Violin 2", "Viola", "Cello", "Contrabass"], "strings are selected, flute is not")
-check(parts["Violin 1"]["display"] == "Violin I", "display name guess: Violin 1 -> Violin I")
-check(s["rights"] == "CC0-1.0" and s["work"] == "Upload Test", "rights and work title come from the file")
+r = su.create([("scores.zip", evil)])
+check(r["files_used"] == ["scores.zip/Score/mvt2.musicxml", "scores.zip/Score/mvt10.musicxml"], f"natural order: {r['files_used']}")
+check(not (Path(DATA).parent / "escape.musicxml").exists() and not Path("/abs.musicxml").exists(), "no file is written outside the record")
+stored = sorted(p.name for p in (su.IMPORTS_DIR / r["import"]).iterdir())
+check(stored == ["001-mvt10.musicxml", "002-mvt2.musicxml", "import.json", "manifest.json"], f"stored names: {stored}")
+check(len(su.summary(r["import"])["skipped"]) == 5, "5 other ZIP entries skipped")
+check(r["work"] == "Upload Test" and parts_of("Upload Test") == ["Violin I", "Violin II", "Viola", "Cello", "Contrabass"],
+      f"default: string parts with standard names, work from the file: {parts_of('Upload Test')}")
+check(bars_of("Upload Test") == [20] * 5 and first_beat_type("Upload Test") == "4", "default: both movements, mvt2 first")
+check(r["problems"] == 0, f"check is clean: {r['report']}")
+check(all(m.get("rights") == "CC0-1.0" and m.get("import") == r["import"] for _, m in works.pieces_of("Upload-Test")),
+      "rights from the file; pieces know their import")
 
-# 2. import: chosen parts, chosen order, chosen names
-order = [f["id"] for f in reversed(s["files"])]   # Scherzo (3/8) first
-r = score_upload.run_import(s["token"], "Upload Test", order,
-                            [{"name": "Viola", "display": "Viola"}, {"name": "Cello", "display": "Violoncello"}])
-pieces = works.pieces_of(works.slug("Upload Test"))
-check([m["part"] for _, m in pieces] == ["Viola", "Violoncello"], f"imported parts in order: {[m['part'] for _, m in pieces]}")
-bars = [works.measure_count(p) for p, _ in pieces]
-check(bars == [20, 20], f"bars per part: {bars}")
-first_time = xmlsafe.etree.parse(str(pieces[0][0] / "score.musicxml"), xmlsafe.PARSER).getroot().findtext("part/measure/attributes/time/beat-type")
-check(first_time == "8", "the reordered first movement (3/8) comes first")
-check(r["problems"] == 0, f"prepare check is clean: {r['report']}")
-check(all(m.get("rights") == "CC0-1.0" for _, m in pieces), "rights recorded from the file")
-check(not (score_upload.STAGE_DIR / s["token"]).exists(), "stage folder removed after import")
+# 2. the same upload again: a new work, not mixed into the first one
+r2 = su.create([("scores.zip", zip_bytes({"Score/mvt2.musicxml": movement(MV1), "Score/mvt10.musicxml": movement(MV2, 13)}))])
+check(r2["work"] == "Upload Test (2)" and r2["renamed_from"] == "Upload Test", f"free name: {r2['work']}")
+check(len(parts_of("Upload Test")) == 5, "first work unchanged")
 
-# 3. a second import into the same work goes after the existing parts
-s2 = score_upload.stage([("mvt2.musicxml", io.BytesIO(movement(MV1))), ("mvt10.musicxml", io.BytesIO(movement(MV2, 13)))])
-check([f["label"] for f in s2["files"]] == ["mvt2.musicxml", "mvt10.musicxml"], "multi-file upload, natural order")
-r2 = score_upload.run_import(s2["token"], "Upload Test", [f["id"] for f in s2["files"]],
-                             [{"name": "Contrabass", "display": "Contrabass"}], rights="CC0-1.0", source="test")
-check(r2["added_to_existing"], "second import reports the existing work")
-check([m["part"] for _, m in works.pieces_of(works.slug("Upload Test"))] == ["Viola", "Violoncello", "Contrabass"], "new part goes last")
+# 2b. a long work name: the " (2)" suffix must survive the 60-character slug limit (no endless loop)
+long = "L" * 70
+la = su.create([("a.musicxml", io.BytesIO(movement(MV1, work=long)))])
+lb = su.create([("b.musicxml", io.BytesIO(movement(MV1, work=long)))])
+check(la["slug"] != lb["slug"] and lb["work"].endswith(" (2)") and len(parts_of(la["work"])) == 5,
+      f"long name gets a free name: {lb['work'][-8:]!r} {lb['slug'][-6:]!r}")
 
-# 4. rejected input
-expect_error(lambda: score_upload.stage([("notes.pdf", io.BytesIO(b"%PDF"))]), "不支援", "PDF is rejected here")
-expect_error(lambda: score_upload.stage([("x.zip", zip_bytes({"a.txt": b"x"}))]), "沒有找到", "zip without scores")
-expect_error(lambda: score_upload.stage([("x.zip", io.BytesIO(b"not a zip"))]), "ZIP", "broken zip")
+# 3. a work folder with full scores, accompaniment files (other notes) and per-instrument files
+folder = {}
+for i, (mv, first) in enumerate(((MV1, 1), (MV2, 13)), start=1):
+    full = movement(mv, first, work="Folder Work", piano=True)                 # 7 parts
+    folder[f"Folder Work/Full/mvt{i}.musicxml"] = full
+    folder[f"Folder Work/Acc/mvt{i}_strings.musicxml"] = movement(mv, first, work="Folder Work", rests=[(1, 4)])  # 6 parts, other notes
+    for name in STRINGS:
+        folder[f"Folder Work/Strings/mvt{i}_{name.replace(' ', '')}.musicxml"] = single_part(full, name)
+r3 = su.create([("folder.zip", zip_bytes(folder))])
+check(all("/Full/" in f for f in r3["files_used"]) and len(r3["files_used"]) == 2, f"full-score folder chosen: {r3['files_used']}")
+check(r3["files_unused"] == 12, f"other folders not used: {r3['files_unused']}")
+check(bars_of("Folder Work") == [20] * 5, f"each movement once: {bars_of('Folder Work')}")
+
+# 4. only per-instrument files: each part from its own files
+strings_only = {k.split("/", 1)[1]: v for k, v in folder.items() if "/Strings/" in k}
+r4 = su.create([("strings.zip", zip_bytes(strings_only))])
+check(r4["work"] == "Folder Work (2)" and len(r4["files_used"]) == 10, f"per-instrument files used: {len(r4['files_used'])}")
+check(parts_of(r4["work"]) == ["Violin I", "Violin II", "Viola", "Cello", "Contrabass"] and bars_of(r4["work"]) == [20] * 5,
+      f"per-instrument parts: {parts_of(r4['work'])} {bars_of(r4['work'])}")
+
+# 5. sheet-practice.json in the ZIP sets the import (paths relative to its folder)
+cfg = {"work": "Config Work", "rights": "custom", "files": ["Strings/mvt2_Viola.musicxml", "Strings/mvt1_Viola.musicxml"],
+       "parts": [{"name": "Viola", "display": "Bratsche"}]}
+r5 = su.create([("cfg.zip", zip_bytes({**folder, "Folder Work/sheet-practice.json": json.dumps(cfg).encode()}))])
+check(r5["config_file"] == "Folder Work/sheet-practice.json", f"config found: {r5['config_file']}")
+check(parts_of("Config Work") == ["Bratsche"] and bars_of("Config Work") == [20] and first_beat_type("Config Work") == "8",
+      f"config parts, names and order: {parts_of('Config Work')} {first_beat_type('Config Work')}")
+check(works.pieces_of("Config-Work")[0][1].get("rights") == "custom", "config rights recorded")
+exported = su.export_config(r5["import"])
+check(exported["files"] == ["Folder Work/Strings/mvt2_Viola.musicxml", "Folder Work/Strings/mvt1_Viola.musicxml"]
+      and exported["parts"] == [{"name": "Viola", "display": "Bratsche"}], f"export: {exported}")
+before = records()
+expect_error(lambda: su.create([("bad.zip", zip_bytes({**folder, "sheet-practice.json": b'{"files": ["nope.musicxml"]}'}))]),
+             "找不到檔案", "config with a missing file")
+expect_error(lambda: su.create([("bad.zip", zip_bytes({**folder, "sheet-practice.json": b"{not json"}))]), "JSON", "broken config")
+check(records() == before, "failed imports leave no record")
+
+# 5b. "practice" in the config sets the work's default practice part (score name or app name)
+for practice, label in (("Violin II", "app name"), ("Violin 2", "score name")):
+    cfg_p = {"work": f"Practice {label}", "practice": practice}
+    rp = su.create([("p.zip", zip_bytes({**{k: v for k, v in folder.items() if "/Full/" in k},
+                                          "Folder Work/sheet-practice.json": json.dumps(cfg_p).encode()}))])
+    vn2 = next(p for p, m in works.pieces_of(works.slug(rp["work"])) if m["part"] == "Violin II")
+    st = works.read_settings(works.slug(rp["work"]))
+    check(rp["practice"] == "Violin II" and st.get("practice") == works.part_xml_id(vn2.name),
+          f"practice from the {label}: {rp['practice']!r} {st}")
+check(su.export_config(rp["import"])["practice"] == "Violin II", "practice in the exported settings")
+expect_error(lambda: su.create([("p.zip", zip_bytes({**{k: v for k, v in folder.items() if "/Full/" in k},
+                                                     "sheet-practice.json": b'{"practice": "Oboe"}'}))]),
+             "練習聲部", "practice part that is not imported")
+plan = su.summary(rp["import"])["plan"]
+rp2 = su.apply(rp["import"], {**plan, "practice": "Viola"})
+viola = next(p for p, m in works.pieces_of(works.slug(rp2["work"])) if m["part"] == "Viola")
+check(works.read_settings(works.slug(rp2["work"])).get("practice") == works.part_xml_id(viola.name)
+      and rp2["practice_xml_id"] == works.part_xml_id(viola.name), "re-import changes the practice part to the new piece")
+
+# 6. re-import with other settings replaces this import's parts
+r6 = su.apply(r3["import"], {"work": "Folder Work Edited", "files": list(reversed(su.summary(r3["import"])["plan"]["files"])),
+                             "parts": [{"name": "Violin 1", "display": "Violin I"}, {"name": "Piano", "display": "Piano"}]})
+check(r6["replaced"] == 5 and parts_of("Folder Work") == [], "old parts removed")
+check(parts_of("Folder Work Edited") == ["Violin I", "Piano"] and first_beat_type("Folder Work Edited") == "8",
+      f"new parts and order: {parts_of('Folder Work Edited')}")
+check(su.summary(r3["import"])["plan"]["work"] == "Folder Work Edited", "settings saved")
+real_check = su.prepare.check_work
+def broken_check(*a, **k):
+    raise ValueError("check failed")
+su.prepare.check_work = broken_check
+expect_error(lambda: su.apply(r3["import"], {"work": "Folder Work Edited", "files": su.summary(r3["import"])["plan"]["files"],
+                                             "parts": [{"name": "Viola", "display": "Viola"}]}), "check failed", "failed re-import")
+su.prepare.check_work = real_check
+check(parts_of("Folder Work Edited") == ["Violin I", "Piano"], "failed re-import puts the old parts back")
+
+# 7. different rights per file: each file's value is recorded, nothing is guessed
+other = movement(MV2, 13, work="Conflict").replace(b"<rights>CC0-1.0</rights>", b"<rights>CC-BY-4.0</rights>")
+r7 = su.create([("mvt1.musicxml", io.BytesIO(movement(MV1, work="Conflict"))), ("mvt2.musicxml", io.BytesIO(other))])
+rights = works.pieces_of("Conflict")[0][1].get("rights")
+check(rights == "mvt1.musicxml: CC0-1.0; mvt2.musicxml: CC-BY-4.0", f"per-file rights: {rights!r}")
+plan = su.summary(r7["import"])["plan"]
+su.apply(r7["import"], {**plan, "rights": "see each movement"})
+check(works.pieces_of("Conflict")[0][1].get("rights") == "see each movement", "a typed value replaces it")
+
+# 8. rejected input
+before = records()
+expect_error(lambda: su.create([("notes.pdf", io.BytesIO(b"%PDF"))]), "不支援", "PDF is rejected here")
+expect_error(lambda: su.create([("x.zip", zip_bytes({"a.txt": b"x"}))]), "沒有找到", "zip without scores")
+expect_error(lambda: su.create([("x.zip", io.BytesIO(b"not a zip"))]), "ZIP", "broken zip")
 old = xmlsafe.MAX_XML_BYTES
 xmlsafe.MAX_XML_BYTES = 1000
-expect_error(lambda: score_upload.stage([("big.zip", zip_bytes({"big.musicxml": b"<a/>" + b" " * 5000}))]), "超過", "oversized zip entry")
+expect_error(lambda: su.create([("big.zip", zip_bytes({"big.musicxml": b"<a/>" + b" " * 5000}))]), "超過", "oversized zip entry")
 mxl = zip_bytes({"META-INF/container.xml": b'<container><rootfiles><rootfile full-path="s.xml"/></rootfiles></container>',
                  "s.xml": b"<a/>" + b" " * 5000})
 expect_error(lambda: xmlsafe.read_mxl(mxl), "超過", "oversized score inside .mxl")
 xmlsafe.MAX_XML_BYTES = old
-leftovers = [p.name for p in score_upload.STAGE_DIR.iterdir()]
-check(leftovers == [], f"failed uploads leave no stage folder: {leftovers}")
-
-s3 = score_upload.stage([("mvt2.musicxml", io.BytesIO(movement(MV1)))])
-ids = [f["id"] for f in s3["files"]]
-expect_error(lambda: score_upload.run_import(s3["token"], "X", ids, [{"name": "Viola", "display": "A"}, {"name": "Cello", "display": "a"}]),
+check(records() == before, "rejected input leaves no record")
+ids = su.summary(r7["import"])["plan"]["files"]
+expect_error(lambda: su.apply(r7["import"], {"work": "X", "files": ids, "parts": [{"name": "Viola", "display": "A"}, {"name": "Cello", "display": "a"}]}),
              "重複", "duplicate display names")
-expect_error(lambda: score_upload.run_import(s3["token"], "X", ["../manifest.json"], [{"name": "Viola", "display": "A"}]),
-             "順序", "unknown file id")
-expect_error(lambda: score_upload.run_import(s3["token"], "X", ids, [{"name": "Oboe", "display": "Oboe"}]), "沒有聲部", "missing part")
-expect_error(lambda: score_upload.run_import("../../etc", "X", ids, []), "代碼", "bad token")
-check(works.pieces_of(works.slug("X")) == [], "failed imports create no pieces")
-score_upload.discard(s3["token"])
-check(not (score_upload.STAGE_DIR / s3["token"]).exists(), "discard removes the stage folder")
+expect_error(lambda: su.apply(r7["import"], {"work": "X", "files": ["../manifest.json"], "parts": [{"name": "Viola", "display": "A"}]}),
+             "檔案清單", "unknown file id")
+expect_error(lambda: su.apply(r7["import"], {"work": "X", "files": ids, "parts": [{"name": "Oboe", "display": "Oboe"}]}), "沒有聲部", "missing part")
+expect_error(lambda: su.summary("../../etc"), "代碼", "bad id")
+check(parts_of("X") == [], "failed re-imports create no pieces")
 
-# 5. stale stage folders are removed
-s4 = score_upload.stage([("mvt2.musicxml", io.BytesIO(movement(MV1)))])
-score_upload.cleanup_stale(now=__import__("time").time() + score_upload.STALE_SECONDS + 1)
-check(not (score_upload.STAGE_DIR / s4["token"]).exists(), "stale stage folder removed")
-
-# 6. files that state different rights: no value is guessed, and the user must give one
-other = movement(MV2, 13).replace(b"<rights>CC0-1.0</rights>", b"<rights>CC-BY-4.0</rights>")
-s5 = score_upload.stage([("mvt1.musicxml", io.BytesIO(movement(MV1))), ("mvt2.musicxml", io.BytesIO(other))])
-check(s5["rights_conflict"] and s5["rights"] == "", f"rights conflict found, no value guessed: {s5['rights']!r}")
-check(not s5["source_conflict"] and s5["source"] == "tests/fixtures/make_demo.py", "same source in both files is kept")
-check([f["rights"] for f in s5["files"]] == ["CC0-1.0", "CC-BY-4.0"], "each file's rights are listed")
-ids5 = [f["id"] for f in s5["files"]]
-expect_error(lambda: score_upload.run_import(s5["token"], "Conflict", ids5, [{"name": "Viola", "display": "Viola"}]),
-             "授權不一樣", "import refused without a rights value")
-score_upload.run_import(s5["token"], "Conflict", ids5, [{"name": "Viola", "display": "Viola"}], rights="see each movement")
-check([m.get("rights") for _, m in works.pieces_of(works.slug("Conflict"))] == ["see each movement"], "the user's rights value is recorded")
-
-# 7. a failure in the check after the import removes the new pieces, and keeps the upload for a retry
-s6 = score_upload.stage([("mvt1.musicxml", io.BytesIO(movement(MV1)))])
-real_check = score_upload.prepare.check_work
-def broken_check(*a, **k):
-    raise ValueError("check failed")
-score_upload.prepare.check_work = broken_check
-expect_error(lambda: score_upload.run_import(s6["token"], "Rollback", [f["id"] for f in s6["files"]],
-                                             [{"name": "Viola", "display": "Viola"}, {"name": "Cello", "display": "Cello"}]),
-             "check failed", "check failure is reported")
-score_upload.prepare.check_work = real_check
-check(works.pieces_of(works.slug("Rollback")) == [], "check failure leaves no pieces")
-check((score_upload.STAGE_DIR / s6["token"]).exists(), "check failure keeps the upload for a retry")
-score_upload.discard(s6["token"])
-
-# 8. an additive meter (3+2) does not stop the import
-add = movement(MV1).replace(b"<beats>4</beats>", b"<beats>3+2</beats>")
-s7 = score_upload.stage([("add.musicxml", io.BytesIO(add))])
+# 9. an additive meter (3+2) does not stop the import
 try:
-    score_upload.run_import(s7["token"], "Additive", [f["id"] for f in s7["files"]], [{"name": "Viola", "display": "Viola"}])
+    su.create([("add.musicxml", io.BytesIO(movement(MV1, work="Additive").replace(b"<beats>4</beats>", b"<beats>3+2</beats>")))])
     ok = True
 except Exception as e:  # noqa: BLE001
     ok = False
     print("   ", type(e).__name__, e)
-check(ok and len(works.pieces_of(works.slug("Additive"))) == 1, "3+2 meter imports")
+check(ok and len(parts_of("Additive")) == 5, "3+2 meter imports")
 
-__import__("shutil").rmtree(DATA, ignore_errors=True)
+# 10. a record goes away when its parts are deleted
+for p, _ in works.pieces_of("Conflict"):
+    shutil.rmtree(p)
+su.remove_if_unused(r7["import"])
+check(r7["import"] not in records(), "record removed with its last part")
+(su.IMPORTS_DIR / ("0" * 32)).mkdir()
+(su.IMPORTS_DIR / ("0" * 32) / "manifest.json").write_text("{}")
+su.cleanup_orphans(now=time.time() + su.ORPHAN_SECONDS + 1)
+check("0" * 32 not in records() and r["import"] in records(), "old record without parts removed, used one kept")
+
+# 11. several movements in one file (as in OpenScore String Quartets): bar numbers start again after a final barline
+one = xmlsafe.etree.fromstring(movement(MV1, work="One File"), xmlsafe.PARSER)
+two = xmlsafe.etree.fromstring(movement(MV2, 13, work="One File"), xmlsafe.PARSER)
+for p1, p2 in zip(one.findall("part"), two.findall("part")):
+    last = p1.findall("measure")[-1]
+    bl = xmlsafe.etree.SubElement(last, "barline", location="right")
+    xmlsafe.etree.SubElement(bl, "bar-style").text = "light-heavy"
+    for m in p2.findall("measure"):   # numbers start at 1 again
+        p1.append(m)
+rf = su.create([("whole.musicxml", io.BytesIO(xmlsafe.etree.tostring(one)))])
+pdir = works.pieces_of(works.slug(rf["work"]))[0][0]
+xml = (pdir / "score.musicxml").read_text()
+check(xml.count('id="movement-') == 2 and works.measure_count(pdir) == 20, f"two movements found in one file: {xml.count('id=\"movement-')}")
+repeat_only = xmlsafe.etree.fromstring(movement(MV1, work="Repeat"), xmlsafe.PARSER)
+for prt in repeat_only.findall("part"):   # a final-style barline inside a movement, numbers go on: no new movement
+    bl = xmlsafe.etree.SubElement(prt.findall("measure")[5], "barline", location="right")
+    xmlsafe.etree.SubElement(bl, "bar-style").text = "light-heavy"
+rr = su.create([("rep.musicxml", io.BytesIO(xmlsafe.etree.tostring(repeat_only)))])
+xml = (works.pieces_of(works.slug(rr["work"]))[0][0] / "score.musicxml").read_text()
+check(xml.count('id="movement-') == 1, "a barline without a new bar 1 is not a movement start")
+
+# 12. the bundled example (examples/, CC0): 4 parts, 4 movements, Violin II as practice part
+ex = su.examples()
+check([e["id"] for e in ex] == ["haydn-op76-no3"], f"examples listed: {ex}")
+rx = su.import_example("haydn-op76-no3")
+pieces = works.pieces_of(rx["slug"])
+check([m["part"] for _, m in pieces] == ["Violin I", "Violin II", "Viola", "Cello"], f"example parts: {[m['part'] for _, m in pieces]}")
+check({works.measure_count(p) for p, _ in pieces} == {531} and rx["problems"] == 0, f"example bars and check: {rx['report'][-1:]}")
+check(all((p / "score.musicxml").read_text().count('id="movement-') == 4 for p, _ in pieces), "example has 4 movements")
+check(rx["practice"] == "Violin II" and all(m.get("rights") == "OpenScore (CC0)" for _, m in pieces), "example practice part and rights")
+expect_error(lambda: su.import_example("../examples"), "沒有這個範例", "unknown example")
+
+shutil.rmtree(DATA, ignore_errors=True)
 print("FAIL" if failures else "All score_upload checks passed.")
 sys.exit(1 if failures else 0)

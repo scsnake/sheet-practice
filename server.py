@@ -178,7 +178,10 @@ def piece(piece_id: str):
 
 @app.delete("/api/pieces/{piece_id}")
 def delete_piece(piece_id: str):
-    shutil.rmtree(_pdir(piece_id))
+    p = _pdir(piece_id)
+    import_id = works.read_meta(p).get("import")
+    shutil.rmtree(p)
+    score_upload.remove_if_unused(import_id)   # 這筆匯入的聲部都刪光了：原始檔也不必留
     return {"ok": True}
 
 
@@ -208,16 +211,24 @@ def page_image(piece_id: str, name: str):
     return FileResponse(f)
 
 
-# ---------- 總譜匯入（MusicXML / MXL / ZIP → 選聲部 → import_parts） ----------
+# ---------- 總譜匯入（MusicXML / MXL / ZIP：預設值直接匯入，之後在「匯入設定」裡調整） ----------
 
 
-@app.post("/api/score-uploads")
-def stage_score_upload(files: list[UploadFile]):
-    """收下一個或多個 MusicXML / MXL / ZIP，回傳每個檔案的聲部，讓使用者選。"""
+@app.post("/api/imports")
+def create_import(files: list[UploadFile]):
+    """收下一個或多個 MusicXML / MXL / ZIP，用預設設定（或 ZIP 裡的 sheet-practice.json）直接匯入。"""
     try:
-        return score_upload.stage([(f.filename or "", f.file) for f in files])
+        return score_upload.create([(f.filename or "", f.file) for f in files])
     except ValueError as e:
         raise HTTPException(400, str(e)) from None
+
+
+@app.get("/api/imports/{import_id}")
+def get_import(import_id: str):
+    try:
+        return score_upload.summary(import_id)
+    except ValueError as e:
+        raise HTTPException(404, str(e)) from None
 
 
 class ImportPart(BaseModel):
@@ -225,30 +236,47 @@ class ImportPart(BaseModel):
     display: str
 
 
-class ImportRequest(BaseModel):
+class ImportPlan(BaseModel):
     work: str
-    order: list[str]
+    files: list[str]
     parts: list[ImportPart]
     rights: str = ""
     source: str = ""
+    practice: str = ""
 
 
-@app.post("/api/score-uploads/{token}/import")
-def run_score_import(token: str, req: ImportRequest):
+@app.post("/api/imports/{import_id}/apply")
+def apply_import(import_id: str, plan: ImportPlan):
+    """用改過的設定重新匯入；這筆匯入原本的聲部會被換掉。"""
     try:
-        return score_upload.run_import(token, req.work, req.order, [p.model_dump() for p in req.parts],
-                                       req.rights, req.source)
+        return score_upload.apply(import_id, plan.model_dump())
     except ValueError as e:
         raise HTTPException(400, str(e)) from None
 
 
-@app.delete("/api/score-uploads/{token}")
-def discard_score_upload(token: str):
+@app.get("/api/examples")
+def list_examples():
+    """repo 裡附的範例樂曲（授權允許自由散布）。"""
+    return score_upload.examples()
+
+
+@app.post("/api/examples/{example_id}/import")
+def import_example(example_id: str):
     try:
-        score_upload.discard(token)
+        return score_upload.import_example(example_id)
+    except ValueError as e:
+        raise HTTPException(400, str(e)) from None
+
+
+@app.get("/api/imports/{import_id}/config")
+def import_config(import_id: str):
+    """目前的匯入設定，存成 sheet-practice.json：放進 ZIP，下次匯入就直接用這些設定。"""
+    try:
+        cfg = score_upload.export_config(import_id)
     except ValueError as e:
         raise HTTPException(404, str(e)) from None
-    return {"ok": True}
+    return Response(json.dumps(cfg, ensure_ascii=False, indent=2), media_type="application/json",
+                    headers={"Content-Disposition": f'attachment; filename="{score_upload.CONFIG_NAME}"'})
 
 
 @app.get("/")

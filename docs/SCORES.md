@@ -1,12 +1,15 @@
 # Finding and preparing scores
 
-This repo contains no scores. You find the scores, and you check that you can use them.
+This repo contains one example score (`examples/`, CC0) and no other scores.
+You find the scores, and you check that you can use them.
+For a coding agent, [AGENT_SCORE_GUIDE.md](AGENT_SCORE_GUIDE.md) has the detailed steps.
 This page is general information, not legal advice.
 
 ## Rules
 
 1. Keep scores and derived files out of this repo and out of public forks.
    This includes MusicXML, PDF, page images, merged scores, timelines and screenshots of notation.
+   The only exception is `examples/`, for scores whose license allows free sharing, each with a `SOURCE.md`.
 2. Check the license of the specific file, not only the age of the music.
    An edition or an engraving can have its own rights, also when the composer died long ago.
 3. Check the law of your country. Terms differ.
@@ -22,7 +25,7 @@ License notes were last checked on 2026-11-01. Licenses can change, so read the 
 | Source | Search for | Format | License notes |
 | --- | --- | --- | --- |
 | [Hauptstimme](https://github.com/MarkGotham/Hauptstimme) (OpenScore Orchestra) | About 100 orchestral movements | `.mscz`, `.mxl` | The repo states CC0 for scores and CC BY-SA for annotations. One third-party mirror states another license, so read the repo's own text. |
-| [OpenScore String Quartets](https://github.com/OpenScore/StringQuartets) | String quartets | `.mscz`, MusicXML | Reported as CC0 |
+| [OpenScore String Quartets](https://github.com/OpenScore/StringQuartets) | String quartets | `.mxl` (about 200 works, all movements in one file), `.mscz`, `.mscx` | The repo's `LICENSE.txt` is CC0 1.0 (checked 2026-11-15). The project asks for credit in public use. |
 | [OpenScore Lieder](https://github.com/OpenScore/Lieder) | Songs | `.mscz`, MusicXML | Reported as CC0 |
 | [Mutopia Project](https://www.mutopiaproject.org/) | Public-domain works | LilyPond, PDF, MIDI | Differs per score: public domain, CC BY or CC BY-SA |
 | [IMSLP](https://imslp.org/) | Scanned parts and scores | Mostly PDF | Status depends on the edition and on your country. PDFs need OMR. |
@@ -83,18 +86,63 @@ Scores go in the folder that `SP_DATA_DIR` names. The default is `data/`.
 
 The app can do steps 2–4 for you.
 
-1. Open 設定 ▾, then click ＋ 上傳分譜.
-2. Select one or more `.musicxml`, `.xml` or `.mxl` files, or a `.zip` that contains them.
-   Each file is one movement.
-3. In the next dialog, set the movement order, the parts to import and their names.
-4. Fill in 授權 and 來源 if the file does not have them.
-5. Click 匯入. The dialog shows the `prepare.py` report, and the work opens.
+1. Open 設定 ▾, then click ＋ 匯入樂譜.
+2. Select a `.zip`, or one or more `.musicxml`, `.xml` or `.mxl` files.
 
-A part comes only from the files that contain it.
-Thus a folder with one file per movement and per instrument also works.
-A part that is in fewer files than the others gets fewer bars. The dialog shows a warning.
+The app imports at once with default settings, and opens the work.
+A note shows the parts, the files used and the result of the `prepare.py` check.
+
+### Default settings
+
+| Setting | Default |
+| --- | --- |
+| Parts | The string parts (Violin I, Violin II, Viola, Cello, Contrabass). If there are none, all parts. |
+| Files | The files of one folder. Each file is one movement, in name order (`mvt2` before `mvt10`). |
+| Work name | The title in the file, else the file name. If the work exists, the app adds ` (2)`. |
+| Rights and source | The values in the files. If the files state different values, the app records each file's value. |
+| Practice part | Not set. The app uses the first part. |
+
+The app selects the folder in which the most files contain all default parts.
+On a tie, it selects the folder whose files contain the most parts, that is, the full scores.
+Thus a work folder with full scores, sections and per-instrument files does not repeat a movement.
+If no file contains all default parts, each part comes from the files that contain it.
 
 The app ignores other files in a ZIP, such as `__MACOSX/` and text files.
+
+### Change the settings later
+
+1. Open the work.
+2. Open 設定 ▾, then click 匯入設定…. The note after an import has the same button.
+3. Select the files and their order, the parts, the part names, the practice part, the work name, the rights and the source.
+4. Click 重新匯入. The new parts replace the parts of this import.
+
+Note: a re-import makes new parts. Check the practice part and the muted parts again.
+
+The app keeps the imported files until you delete all parts of the import in 管理.
+
+### Settings file
+
+Put a `sheet-practice.json` file in the ZIP to set the import. All fields are optional.
+Paths are relative to the folder of `sheet-practice.json`.
+
+```json
+{
+  "work": "My Work",
+  "files": ["Full/mvt1.musicxml", "Full/mvt2.musicxml"],
+  "parts": [{"name": "Violin 1", "display": "Violin I"}, "Viola"],
+  "rights": "CC0-1.0",
+  "source": "https://example.org/my-work",
+  "practice": "Violin II"
+}
+```
+
+- `files`: the movements, in order.
+- `parts`: the part names in the score. `display` sets the name in the app.
+- `practice`: the practice part when a browser opens the work for the first time.
+  Use the part name in the score or the name in the app.
+  You can change it later in 匯入設定, or click a part name in the app.
+
+To get this file, click 下載設定檔 in 匯入設定. Put it at the top of the ZIP.
 
 ## Scanned PDFs
 

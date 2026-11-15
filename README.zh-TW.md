@@ -2,7 +2,8 @@
 
 [English](README.md)
 
-**這個 repo 不含任何樂譜**，樂譜要自己準備：去哪裡找、怎麼處理，見 [docs/SCORES.md](docs/SCORES.md)。
+**這個 repo 只附一首範例樂曲**：海頓弦樂四重奏 Op. 76 No. 3，來自 [OpenScore String Quartets](https://github.com/OpenScore/StringQuartets)（CC0），來源記錄見 [examples/haydn-op76-no3/SOURCE.md](examples/haydn-op76-no3/SOURCE.md)。第一次打開時按範例按鈕，或「設定 ▾」→「＋ 範例」就能匯入。
+其他樂譜要自己準備：去哪裡找、怎麼處理，見 [docs/SCORES.md](docs/SCORES.md)。用 coding agent 的話，把 [docs/AGENT_SCORE_GUIDE.md](docs/AGENT_SCORE_GUIDE.md) 給它，它可以幫你找樂譜、檢查，並打包成附預設設定的 ZIP。
 
 把分譜（PDF 或掃描圖片，例如第二小提琴分譜）丟進去，本機網頁就會：
 
@@ -54,9 +55,11 @@ uv run python omr.py part.pdf "作品" "Violin II"
 
 有數位譜（.mxl 或 .musicxml，每個樂章一個檔）就不必掃描。
 
-網頁也可以做：「設定 ▾」→「＋ 上傳分譜」，一次選多個 MusicXML／MXL 檔，或一個 ZIP 檔。
-下一步會列出總譜裡的聲部，可以勾選要匯入的聲部、改名稱、調整樂章順序、填授權與來源。
-按「匯入」後會跑 `prepare.py` 的檢查，並顯示報告。
+網頁也可以做：「設定 ▾」→「＋ 匯入樂譜」，選一個 ZIP，或幾個 MusicXML／MXL 檔。
+選完就用預設值直接匯入並打開作品（弦樂五部；同一個資料夾的檔案＝各樂章；有總譜時用總譜），
+上方的提示列出用了哪些聲部與檔案，以及 `prepare.py` 的檢查結果。
+之後要改聲部、檔案與順序、名稱、練習聲部、授權，按「設定 ▾」→「匯入設定…」，改完按「重新匯入」。
+ZIP 裡可以放 `sheet-practice.json` 指定這些設定，格式見 [docs/SCORES.md](docs/SCORES.md) 的 "Settings file"。
 
 命令列的做法如下。下面這行會從總譜抽出弦樂五部
 （Violin I／II、Viola、Cello、Contrabass），把各樂章接起來，並把只寫在總譜第一個聲部的速度標記複製過來：
@@ -107,7 +110,7 @@ uv run python import_parts.py "作品" <作品資料夾>/Reduction/*_Reduction.m
 
 | 操作 | 方法 |
 | --- | --- |
-| 上傳分譜 | 「＋ 上傳分譜」，填作品名稱與聲部名稱；接受 PDF、PNG/JPG、MusicXML/MXL/ZIP。PDF 一次一個，每頁約 15–30 秒辨識，完成後自動載入。MusicXML／MXL／ZIP 可以一次選多個檔（每個檔一個樂章），下一步選要匯入的聲部 |
+| 匯入樂譜 | 「＋ 匯入樂譜」選檔案就直接匯入，不必先填資料。MusicXML／MXL／ZIP：用預設值匯入，之後在「匯入設定…」裡調整。PDF／圖片：每個檔案一個聲部，作品名稱用第一個檔名，聲部名稱從檔名猜，之後在「管理」裡改；每頁約 15–30 秒辨識，完成後自動載入 |
 | 多聲部 | 同一作品名稱下的分譜自動合併成總譜（依「管理」裡的順序由上到下）。頂端「聲部」列：勾選 = 播放該聲部，點名稱 = 設為練習聲部；「練習聲部音量」可把自己的聲部調小或關掉 |
 | 播放／暫停 | ▶ 按鈕或 **空白鍵**；■ 停止（停在目前位置，不跳回起點）；**Home** 回到起點（或區段起點） |
 | 工具列 | 兩列：上排是播放（播放／停止、速度、目前樂章小節與 ♩、跳至），下排是聲部與「顯示」；其餘收在 **練習**（循環區段、拍點、預備拍、跳過長休止）與 **設定**（作品、音量、標準音、音色、立體聲、縮放、修正音符、原始掃描）兩個面板。工具列會**自動收起**：載入後顯示約 4 秒，滑鼠離開約 1.5 秒後往上收起，按播放立刻收起；滑鼠移到畫面上緣（或按上緣的小標籤、觸控點一下）就會出現，滑鼠在工具列上或游標在欄位裡時不會收。工具列是蓋在樂譜上的，收起／展開不會動到捲動位置。收起時右上角顯示**目前樂章、小節與第幾拍**。修正音符模式不會自動收起；要完全關掉自動收起，在瀏覽器主控台執行 `localStorage.toolbarAutoHide = "off"` 後重新整理 |
@@ -176,7 +179,7 @@ uv run python import_parts.py "作品" <作品資料夾>/Reduction/*_Reduction.m
 4. 用拍號變換（樂章交界）、排練記號核對各聲部是否已經對齊
 
 錯誤很多（整段節奏、拍號、調號錯）時，比較有效率的作法是：
-「⬇ MusicXML」下載整份多聲部譜 → 用 [MuseScore Studio](https://musescore.org/)（免費）修正 → 另存 MusicXML → 以同作品名稱、同聲部名稱重新上傳（上傳 MusicXML 不需要再跑辨識）。
+「⬇ MusicXML」下載整份多聲部譜 → 用 [MuseScore Studio](https://musescore.org/)（免費）修正 → 另存 MusicXML → 用「＋ 匯入樂譜」匯入（不需要再跑辨識）。匯入會建立新作品「名稱 (2)」，確認沒問題後，在「管理」裡刪掉舊的。
 
 ## 不想掃描？現成的結構化樂譜來源
 
@@ -211,7 +214,9 @@ import_parts.py  從 MusicXML/MXL 總譜抽弦樂分譜、接樂章、複製速�
 reduce_orchestra.py  把管樂／銅管等分部縮成一份「鋼琴式」兩行譜表的伴奏聲部（弦樂練習用的和聲背景）
 align.py         （實驗）用掃描頁的小節號碼與多小節休止數字對齊 OMR 結果
 server.py        FastAPI：上傳、辨識進度、作品合併／寫回、設定
-score_upload.py  網頁匯入總譜：暫存上傳的 MusicXML／MXL／ZIP、列出聲部、呼叫 import_parts 匯入
+check_import.py  試匯入：在暫時的資料夾裡匯入 ZIP 或樂譜檔，印出結果（不動你的資料）
+examples/        內建範例樂曲（授權允許自由散布；每個資料夾有 SOURCE.md）
+score_upload.py  網頁匯入總譜：保留上傳的 MusicXML／MXL／ZIP、算預設設定（或讀 sheet-practice.json）、呼叫 import_parts 匯入、重新匯入
 xmlsafe.py       所有 MusicXML 共用的 parser（樂譜檔不可信任：不展開實體、不讀外部檔案）
 omr.py           PDF → 頁面圖片 → homr → 合併多頁 → 清理（和弦裡的休止符、整小節休止）
 works.py         作品層：多分譜合併成多聲部 MusicXML、補齊小節、編輯後拆回各分譜；合併結果與時間軸依版本戳快取

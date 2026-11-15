@@ -1,7 +1,7 @@
 [project]
 name = "sheet-practice"
 version = "0.1.0"
-description = "Local play-along practice app for string parts. Scores are not included."
+description = "Local play-along practice app for string parts. Includes one CC0 example score; bring your own for other works."
 readme = "README.md"
 license = "AGPL-3.0-or-later"
 license-files = ["LICENSE", "THIRD_PARTY_NOTICES.md"]
