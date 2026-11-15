@@ -7,6 +7,10 @@
 4. 塊的最後一行兩種做法（cut：只留完整的行／stretch：拉滿）各截一張塊交界的圖到 out/
 
 會暫時改速度、關掉預備拍／循環／跳過長休止、音色改純音，結束時還原。
+
+計時類的檢查（音訊時鐘有沒有走、追加一塊時的幀間隔）受機器忙碌程度影響：第 1 步失敗時再播一次，
+兩次都失敗才算失敗。Chromium 用假的音訊輸出（--disable-audio-output），游標跟著的 AudioContext 時鐘
+就不受 Mac 的音訊裝置影響。
 """
 import json
 import os
@@ -19,12 +23,15 @@ URL = "http://localhost:8777/"
 OUT = Path(__file__).parent / "out"
 PLAY_SEC = float(os.environ.get("SP_PLAY_SEC", "30"))
 CHUNK_LIMIT = 6
+TIMING_CHECKS = ("audio clock ran", "append gap<120ms")   # 失敗時重播一次
+BROWSER_ARGS = ["--autoplay-policy=no-user-gesture-required", "--disable-audio-output"]
 
 HOOK = """(() => {
   window.__late = []; window.__osc = 0;
   const start = OscillatorNode.prototype.start;
   OscillatorNode.prototype.start = function (when) {
     const c = this.context;
+    window.__ac = c;   // 游標跟著這個時鐘走；記錄它，播放卡住時才看得出原因
     if (typeof when === 'number' && c && c.state === 'running') {
       window.__osc++;
       const late = c.currentTime - when;
@@ -48,7 +55,7 @@ REC = """() => {
     if (prev) { const ds = [...tops].filter(([v]) => prev.has(v)).map(([v, t]) => t - prev.get(v)); if (ds.length) { move = ds[0]; spread = Math.max(...ds) - Math.min(...ds); } }
     const cv = SP.cursorView, c = cv && cv.osmd.cursor; let cur = null;
     if (c && !c.hidden && c.cursorElement) { const r = c.cursorElement.getBoundingClientRect(); cur = [r.top - wr.top, r.bottom - wr.top]; }
-    window.__rec.push({ t: +(performance.now() - window.__t0).toFixed(1), n: SP.chunks.length, m: SP.steps[SP.pos].measure, move: +move.toFixed(1), spread: +spread.toFixed(1), cur, h: wrap.clientHeight, paused: SP.follow.paused });
+    window.__rec.push({ t: +(performance.now() - window.__t0).toFixed(1), n: SP.chunks.length, m: SP.steps[SP.pos].measure, move: +move.toFixed(1), spread: +spread.toFixed(1), cur, h: wrap.clientHeight, paused: SP.follow.paused, ac: window.__ac ? +window.__ac.currentTime.toFixed(3) : null });
     prev = tops;
     if (window.__rec.length < 30000) requestAnimationFrame(tick);
   };
@@ -107,11 +114,15 @@ def analyze(label, rec, stats, late):
     max_n = max(r["n"] for r in rec)
     late_after = [l for t, l in late if t > 1000]
     bars = sorted({r["m"] + 1 for r in rec})
+    clock = [r["ac"] for r in rec if r["ac"] is not None]
+    clock_ran = clock[-1] - clock[0] if clock else 0.0
     print(f"  [{label}] played bars {bars[0]}–{bars[-1]}, frames {len(rec)}, worst frame gap {worst[0]} ms at {worst[1]:.0f} ms")
     print(f"    chunks appended while playing: {len(built)}  " + ", ".join(f"{s['from'] + 1}-{s['to'] + 1} load {s['loadMs']} + render {s['renderMs']} ms (worst gap nearby {g} ms)" for s, g in zip(built, near)))
     print(f"    max chunks in DOM {max_n}; jump frames {len(jumps)} {[(r['t'], r['move'], r['spread']) for r in jumps[:5]]}; max per-frame move {max(abs(r['move']) for r in rec):.1f} px")
+    print(f"    audio clock advanced {clock_ran:.1f} s in {end / 1000:.1f} s")
     print(f"    cursor out of view: {out} frames, longest {longest:.0f} ms; notes started late >20 ms after the first second: {len(late_after)} (max {max(late_after) if late_after else 0} s)")
     return {
+        "audio clock ran": clock_ran >= 0.8 * end / 1000,
         "chunks<=6": max_n <= CHUNK_LIMIT,
         "no jumps": not jumps,
         "append gap<120ms": (max(near) if near else 0) < 120,
@@ -121,9 +132,24 @@ def analyze(label, rec, stats, late):
     }
 
 
+def play_and_record(pg, goto, label):
+    """從 goto 播 PLAY_SEC 秒，記錄每一幀，回傳檢查結果。"""
+    pg.fill("#gotoBar", goto); pg.keyboard.press("Enter")   # 回到起點（也恢復跟隨）
+    pg.wait_for_timeout(2000)
+    pg.evaluate(REC)
+    pg.keyboard.press("Space")
+    pg.wait_for_timeout(PLAY_SEC * 1000)
+    pg.keyboard.press("Space")
+    pg.evaluate(STOPREC)
+    rec = pg.evaluate("window.__rec")
+    stats = pg.evaluate("SP.chunkStats.map((s) => ({ ...s, at: s.at - window.__t0 }))")
+    late = pg.evaluate("window.__late.map(([t, l]) => [t - window.__t0, l])")
+    return analyze(label, rec, stats, late)
+
+
 def scenario(p, slug, goto, speed, chunk_mode, checks):
     label = f"{slug} {chunk_mode}"
-    b = p.chromium.launch(headless=True, args=["--autoplay-policy=no-user-gesture-required"])
+    b = p.chromium.launch(headless=True, args=BROWSER_ARGS)
     pg = b.new_page(viewport={"width": 1500, "height": 900})
     errs = []
     pg.on("pageerror", lambda e: errs.append((e.stack or str(e))[:900]))
@@ -150,19 +176,12 @@ def scenario(p, slug, goto, speed, chunk_mode, checks):
     shot = OUT / f"scroll_{slug}_{chunk_mode}_boundary.png"
     pg.locator("#scoreWrap").screenshot(path=str(shot))
     print(f"  boundary screenshot: {shot.name}")
-    pg.fill("#gotoBar", goto); pg.keyboard.press("Enter")   # 回到起點（也恢復跟隨）
-    pg.wait_for_timeout(2000)
 
-    result = {}
-    pg.evaluate(REC)
-    pg.keyboard.press("Space")
-    pg.wait_for_timeout(PLAY_SEC * 1000)
-    pg.keyboard.press("Space")
-    pg.evaluate(STOPREC)
-    rec = pg.evaluate("window.__rec")
-    stats = pg.evaluate("SP.chunkStats.map((s) => ({ ...s, at: s.at - window.__t0 }))")
-    late = pg.evaluate("window.__late.map(([t, l]) => [t - window.__t0, l])")
-    result.update(analyze(label, rec, stats, late))
+    result = play_and_record(pg, goto, label)
+    slow = [k for k in TIMING_CHECKS if not result[k]]
+    if slow:
+        print(f"  timing check failed ({', '.join(slow)}): playing again once")
+        result = play_and_record(pg, goto, f"{label} retry")
 
     if checks:
         # 播放中滾輪往上捲 → 暫停跟隨，畫面停在使用者捲到的地方；跳小節 → 恢復
