@@ -86,6 +86,7 @@ Scores go in the folder that `SP_DATA_DIR` names. The default is `data/`.
 ## Import in the browser
 
 The app can do steps 2–4 for you.
+The hosted app (a static site) imports only ready packages: see [HOSTING.md](HOSTING.md).
 
 1. Open 設定 ▾, then click ＋ 匯入樂譜.
 2. Select a `.zip`, or one or more `.musicxml`, `.xml` or `.mxl` files.

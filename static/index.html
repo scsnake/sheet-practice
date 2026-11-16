@@ -3,8 +3,9 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="sp-mode" content="server"><!-- build_static.py sets "hosted": the static site, works in IndexedDB -->
 <title>分譜跟奏練習</title>
-<link rel="stylesheet" href="/static/style.css">
+<link rel="stylesheet" href="static/style.css">
 </head>
 <body>
 <div id="headerStack">
@@ -122,7 +123,7 @@
   <div id="emptyState" class="hidden">
     <p>還沒有作品。</p>
     <button id="emptyImport" class="btn primary">＋ 匯入樂譜</button>
-    <p class="muted">選一個 ZIP、幾個 MusicXML／MXL，或 PDF／圖片，也可以直接拖進這一頁；選完就直接匯入。找樂譜的方法見 docs/SCORES.md。</p>
+    <p id="emptyHint" class="muted">選一個 ZIP、幾個 MusicXML／MXL，或 PDF／圖片，也可以直接拖進這一頁；選完就直接匯入。找樂譜的方法見 docs/SCORES.md。</p>
     <div id="emptyExamples" class="hidden"><p>或先試內建的範例（授權允許自由散布）：</p><div class="exampleButtons"></div></div>
   </div>
   <div id="scoreWrap">
@@ -182,6 +183,15 @@
   <form method="dialog"><button class="btn">關閉</button></form>
 </dialog>
 
+<dialog id="worksDlg">
+  <h3>這個瀏覽器裡的作品</h3>
+  <p class="muted">作品只存在這個瀏覽器裡。清除網站資料會刪掉它們；換電腦或換瀏覽器時，要再匯入一次樂譜包。</p>
+  <table id="worksTable"><thead><tr><th>作品</th><th>聲部</th><th>大小</th><th>狀態</th><th></th></tr></thead><tbody></tbody></table>
+  <p id="worksEmpty" class="muted hidden">還沒有作品。</p>
+  <p id="worksStorage" class="muted"></p>
+  <form method="dialog"><button class="btn">關閉</button></form>
+</dialog>
+
 <dialog id="help">
   <h3>快捷鍵</h3>
   <ul>
@@ -200,19 +210,21 @@
   <form method="dialog"><button class="btn">關閉</button></form>
 </dialog>
 
-<script src="/static/vendor/opensheetmusicdisplay.min.js"></script>
-<script src="/static/vendor/WebAudioFontPlayer.js"></script>
-<script src="/static/vendor/0400_FluidR3_GM_sf2_file.js"></script>
-<script src="/static/vendor/0410_FluidR3_GM_sf2_file.js"></script>
-<script src="/static/vendor/0420_FluidR3_GM_sf2_file.js"></script>
-<script src="/static/vendor/0430_FluidR3_GM_sf2_file.js"></script>
-<script src="/static/vendor/0000_FluidR3_GM_sf2_file.js"></script>
-<script src="/static/vendor/0190_FluidR3_GM_sf2_file.js"></script>
-<script src="/static/vendor/0200_FluidR3_GM_sf2_file.js"></script>
-<script src="/static/vendor/0490_FluidR3_GM_sf2_file.js"></script>
-<script src="/static/app.js"></script>
 <div id="dropOverlay" class="hidden" aria-hidden="true">
   <div class="box"><div class="big">放開就匯入</div><div class="small">ZIP、MusicXML／MXL，或 PDF／圖片</div></div>
 </div>
+
+<script src="static/vendor/opensheetmusicdisplay.min.js"></script>
+<script src="static/vendor/WebAudioFontPlayer.js"></script>
+<script src="static/vendor/0400_FluidR3_GM_sf2_file.js"></script>
+<script src="static/vendor/0410_FluidR3_GM_sf2_file.js"></script>
+<script src="static/vendor/0420_FluidR3_GM_sf2_file.js"></script>
+<script src="static/vendor/0430_FluidR3_GM_sf2_file.js"></script>
+<script src="static/vendor/0000_FluidR3_GM_sf2_file.js"></script>
+<script src="static/vendor/0190_FluidR3_GM_sf2_file.js"></script>
+<script src="static/vendor/0200_FluidR3_GM_sf2_file.js"></script>
+<script src="static/vendor/0490_FluidR3_GM_sf2_file.js"></script>
+<script src="static/hosted.js"></script>
+<script src="static/app.js"></script>
 </body>
 </html>

@@ -7,6 +7,8 @@ The import runs in a new temporary data folder, which is deleted at the end.
   uv run python check_import.py my-work.zip --json      # machine-readable result
   uv run python check_import.py my-work.zip --bars 1:50-65
       # all parts of movement 1, bars 50-65, as compact text (to look at an alignment suspect)
+  uv run python check_import.py my-work.zip --export my-work-ready.zip
+      # also write the ready package for the hosted app (export_ready.py)
 
 It also checks that the parts line up bar by bar (check_alignment.py).
 
@@ -28,13 +30,21 @@ TMP = tempfile.mkdtemp(prefix="sp-check-")
 os.environ["SP_DATA_DIR"] = TMP   # before omr is imported: it reads SP_DATA_DIR once
 
 import check_alignment  # noqa: E402
+import export_ready  # noqa: E402
 import score_upload  # noqa: E402
 import works  # noqa: E402
 
 
 def main(argv: list[str]) -> int:
     as_json = "--json" in argv
-    bars = None
+    bars = export = None
+    if "--export" in argv:
+        k = argv.index("--export")
+        if k + 1 >= len(argv):
+            print("--export needs a file name, for example my-work-ready.zip")
+            return 2
+        export = Path(argv[k + 1])
+        argv = argv[:k] + argv[k + 2:]
     if "--bars" in argv:
         k = argv.index("--bars")
         if k + 1 >= len(argv):
@@ -85,6 +95,9 @@ def main(argv: list[str]) -> int:
         "report": result["report"],
         "alignment": alignment,
     }
+    if export:
+        size = export_ready.write(result["slug"], export, result)
+        out["export"] = str(export)
     if as_json:
         print(json.dumps(out, ensure_ascii=False, indent=2))
     else:
@@ -105,6 +118,8 @@ def main(argv: list[str]) -> int:
         print("Alignment:")
         for line in check_alignment.report_lines(alignment):
             print(f"  {line}")
+        if export:
+            print(f"Exported:  {export} ({size / 1e6:.1f} MB), the ready package for the hosted app")
     return 1 if out["problems"] or alignment["problems"] else 0
 
 

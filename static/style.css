@@ -63,8 +63,8 @@ dialog ul { padding-left: 18px; }
 .ranges .chip b { cursor: pointer; margin-left: 4px; color: #b00; }
 .partrow { display: inline-flex; align-items: center; gap: 4px; padding: 2px 8px; border: 1px solid #ddd; border-radius: 14px; background: #fff; }
 .partrow.practice { border-color: var(--accent); background: #eef3ff; }
-#manageTable { border-collapse: collapse; }
-#manageTable td, #manageTable th { padding: 3px 6px; border-bottom: 1px solid #eee; text-align: left; }
+#manageTable, #worksTable { border-collapse: collapse; }
+#manageTable td, #manageTable th, #worksTable td, #worksTable th { padding: 3px 6px; border-bottom: 1px solid #eee; text-align: left; }
 #manageTable input[type=text] { width: 140px; }
 #manageTable input[type=number] { width: 50px; }
 #importDlg { max-width: 760px; width: calc(100vw - 32px); }

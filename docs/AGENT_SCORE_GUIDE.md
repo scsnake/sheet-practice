@@ -237,15 +237,28 @@ Do not let an agent edit the score.
 A part that is 1 bar off sounds wrong at once, so this check is fast.
 It is the only check for the "not checked" ranges.
 
-## Step 8: report to the user
+## Step 8: export a ready package (hosted app)
+
+Do this step if the user uses the hosted app (a static site, see [HOSTING.md](HOSTING.md)).
+The hosted app does no conversion, so it imports only ready packages.
+
+```sh
+uv run python check_import.py my-work.zip --export my-work-ready.zip
+```
+
+The package contains the merged score, the timeline and the import summary of this check.
+The hosted app shows the same summary, with the alignment result.
+The local app can also import the package.
+
+## Step 9: report to the user
 
 Give the user:
 
-1. The path of the ZIP.
+1. The path of the ZIP, and of the ready package if you made one.
 2. The source link, the commit or download date, and the license that the source states.
 3. The work, the parts, the bar count and the number of movements.
 4. Each problem and each warning from `check_import.py`.
 5. The alignment result: each suspect and its verdict, and the "not checked" ranges for the user to listen to.
-6. The import step: 設定 ▾ → ＋ 匯入樂譜 → select the ZIP.
+6. The import step: 設定 ▾ → ＋ 匯入樂譜 → select the ZIP. The user can also drag the ZIP onto the page.
 
 The user can change all settings later in 設定 ▾ → 匯入設定….

@@ -2,6 +2,9 @@
 (() => {
   const OSMD = window.opensheetmusicdisplay;
   const $ = (id) => document.getElementById(id);
+  // 靜態網站模式（static/hosted.js）：沒有伺服器，/api/... 由瀏覽器裡的 IndexedDB 回答；只收樂譜包，不轉換樂譜
+  const HOSTED = !!window.SPHosted;
+  const apiFetch = HOSTED ? window.SPHosted.fetch : (url, opts) => fetch(url, opts);
   const UNIT = 10; // OSMD 座標單位 → 像素（zoom = 1）
   const WIN = 40;  // 一頁最多幾小節；實際依譜表數縮小（排版時間大約和「小節×譜表」成正比）
   const winSize = () => S.winSize || WIN;  // 一次只排版這麼多小節（四聲部 800 小節全排要數十秒）
@@ -182,7 +185,7 @@
     return [0, S.totalBeats];
   }
   async function api(url, opts) {
-    const r = await fetch(url, opts);
+    const r = await apiFetch(url, opts);
     if (!r.ok) throw new Error(`${r.status} ${await r.text()}`);
     return r.headers.get("content-type")?.includes("json") ? r.json() : r.text();
   }
@@ -221,6 +224,24 @@
     return /violin\s*1|violin\s*i(?![iv])|vn\.?\s*1|violin1/.test(n) ? "Violin I" : /violin\s*2|violin\s*ii|vn\.?\s*2|violin2|vn2/.test(n) ? "Violin II"
       : /viola/.test(n) ? "Viola" : /cello/.test(n) ? "Cello" : /bass/.test(n) ? "Contrabass" : "";
   };
+  const ACCEPT_TEXT = HOSTED ? "sheet-practice 的樂譜包（ZIP）" : "ZIP、MusicXML／MXL、PDF 或圖片";
+  if (HOSTED) {   // 網頁版：只收樂譜包；匯入設定、管理聲部、原始掃描只在本機版有
+    $("importInput").accept = ".zip";
+    $("btnUpload").title = "選一個樂譜包（ZIP），也可以把它拖進頁面。樂譜包用 check_import.py --export 做";
+    $("emptyHint").textContent = "選一個樂譜包（ZIP），或直接拖進這一頁。樂譜包由 agent 準備好（check_import.py --export，見 docs/AGENT_SCORE_GUIDE.md）。"
+      + "作品只存在這個瀏覽器裡：換電腦或換瀏覽器時要再匯入一次。";
+    $("dropOverlay").querySelector(".small").textContent = ACCEPT_TEXT;
+    for (const id of ["btnImportSettings", "importNoteSettings"]) $(id).classList.add("hidden");
+    $("showPages").closest("label").classList.add("hidden");
+    $("btnManage").title = "這個瀏覽器裡的作品：大小、刪除";
+    $("downloadXml").addEventListener("click", (e) => {   // 下載目前的譜（含改過的音符）：沒有伺服器網址，用 blob
+      const a = $("downloadXml");
+      if (!S.xmlText) { e.preventDefault(); return; }
+      if (a.dataset.blob) URL.revokeObjectURL(a.dataset.blob);
+      a.href = a.dataset.blob = URL.createObjectURL(new Blob([S.xmlText], { type: "application/vnd.recordare.musicxml+xml" }));
+      a.download = `${S.slug}.musicxml`;
+    });
+  }
   const pickImport = () => { if (importing) return; $("importInput").value = ""; $("importInput").click(); };
   $("btnUpload").addEventListener("click", pickImport);
   $("emptyImport").addEventListener("click", pickImport);
@@ -252,10 +273,11 @@
     const files = [...e.dataTransfer.files];
     const bad = files.filter((f) => !DROP_RE.test(f.name));
     if (!files.length) return;
-    if (bad.length) { setStatus(`不支援的檔案：${bad.map((f) => f.name).join("、")}（可以用 ZIP、MusicXML／MXL、PDF 或圖片）`, true); return; }
+    if (bad.length) { setStatus(`不支援的檔案：${bad.map((f) => f.name).join("、")}（可以用 ${ACCEPT_TEXT}）`, true); return; }
     importFiles(files);
   });
   async function importFiles(files) {
+    if (HOSTED) return files.length === 1 && /\.zip$/i.test(files[0].name) ? importScores(files) : setStatus("網頁版一次匯入一個樂譜包（ZIP）", true);
     const scores = files.filter((f) => SCORE_RE.test(f.name) || CONFIG_RE.test(f.name));
     if (scores.length === files.length) return importScores(files);
     if (scores.length) { alert("MusicXML／MXL／ZIP 和 PDF／圖片請分開匯入"); return; }
@@ -300,6 +322,7 @@
   // iPad 用 http 連進來時不是 secure context，沒有 crypto.randomUUID；getRandomValues 都有
   const randomToken = () => [...crypto.getRandomValues(new Uint8Array(16))].map((b) => b.toString(16).padStart(2, "0")).join("");
   function postImport(url, body, prog) {   // 和 api() 一樣：回傳 JSON，失敗時丟出「狀態碼 內容」
+    if (HOSTED) return window.SPHosted.importRequest(url, body, prog);
     const token = randomToken();
     return new Promise((resolve, reject) => {
       const x = new XMLHttpRequest();   // fetch 拿不到上傳進度
@@ -350,7 +373,7 @@
     if (importing) return;
     importing = true; document.body.classList.add("importing"); setStatus("");
     try { await importAndOpen(title, url, body); }
-    catch (err) { setStatus("匯入失敗：" + apiError(err), true); }
+    catch (err) { setStatus(err.cancelled ? err.message : "匯入失敗：" + apiError(err), !err.cancelled); }   // 使用者自己取消：不算失敗
     finally { importing = false; document.body.classList.remove("importing"); }
   }
   function importScores(files) {
@@ -600,7 +623,33 @@
     } finally { importing = false; }
   });
 
+  async function manageHosted() {   // 網頁版的「管理」：這個瀏覽器裡的作品，可以刪除
+    const list = (await window.SPHosted.list()).sort((a, b) => a.work.localeCompare(b.work));
+    const tb = $("worksTable").querySelector("tbody"); tb.innerHTML = "";
+    for (const w of list) {
+      const tr = document.createElement("tr");
+      const cells = [w.work, w.parts.map((p) => p.part).join("、"), `${(w.bytes / 1e6).toFixed(1)} MB`, w.edited ? "改過音符" : "和樂譜包一樣"];
+      for (const c of cells) { const td = document.createElement("td"); td.textContent = c; tr.appendChild(td); }
+      const td = document.createElement("td"), del = document.createElement("button");
+      del.className = "btn small danger"; del.textContent = "刪除"; td.appendChild(del); tr.appendChild(td);
+      del.addEventListener("click", async () => {
+        if (!confirm(`從這個瀏覽器刪除「${w.work}」？${w.edited ? "改過的音符也會不見。" : ""}要用時再匯入樂譜包。`)) return;
+        await api(`/api/works/${encodeURIComponent(w.slug)}`, { method: "DELETE" });
+        tr.remove();
+        if (S.slug === w.slug) { stop(false); S.slug = null; }
+        refreshWorks();
+      });
+      tb.appendChild(tr);
+    }
+    $("worksEmpty").classList.toggle("hidden", list.length > 0);
+    try {
+      const est = await navigator.storage?.estimate?.(), persisted = await navigator.storage?.persisted?.();
+      $("worksStorage").textContent = est ? `這個網站用了 ${(est.usage / 1e6).toFixed(1)} MB` + (persisted ? "，瀏覽器不會自動清掉" : "") : "";
+    } catch { $("worksStorage").textContent = ""; }
+    $("worksDlg").showModal();
+  }
   $("btnManage").addEventListener("click", async () => {
+    if (HOSTED) return manageHosted();
     const pieces = await api("/api/pieces");
     pieces.sort((a, b) => a.work.localeCompare(b.work) || a.order - b.order);
     const tb = $("manageTable").querySelector("tbody"); tb.innerHTML = "";
@@ -630,7 +679,7 @@
     stop(false); clearTimeout(S.pollTimer);
     flushSave(); S.settingsFor = null;
     S.slug = slug; localStorage.setItem("lastWork", slug);
-    $("downloadXml").href = `/api/works/${slug}/score.musicxml`;
+    $("downloadXml").href = HOSTED ? "#" : `/api/works/${slug}/score.musicxml`;
     let info;
     try { info = await api(`/api/works/${slug}`); } catch (e) { setStatus("讀取作品失敗：" + e.message, true); return; }
     S.work = info.work; S.workInfo = info;
@@ -648,7 +697,7 @@
     const distinct = new Set(info.parts.filter((p) => p.measures != null).map((p) => p.measures));
     try {
       S.t0 = performance.now();
-      const [xr, tr, settings] = await Promise.all([fetch(`/api/works/${slug}/score.musicxml`), fetch(`/api/works/${slug}/timeline.json`), loadSettings(slug)]);
+      const [xr, tr, settings] = await Promise.all([apiFetch(`/api/works/${slug}/score.musicxml`), apiFetch(`/api/works/${slug}/timeline.json`), loadSettings(slug)]);
       if (!xr.ok) throw new Error(`${xr.status} ${await xr.text()}`);
       const stamp = xr.headers.get("x-score-stamp") || "";
       const [xml, timeline] = await Promise.all([xr.text(), tr.ok ? tr.json() : null]);
@@ -746,8 +795,10 @@
       await yieldToPaint();
       if (!S.full) { const hidden = document.createElement("div"); hidden.style.display = "none"; document.body.appendChild(hidden); S.full = new OSMD.OpenSheetMusicDisplay(hidden, { autoResize: false, backend: "svg" }); }
       await S.full.load(xml);
-      analyzeFull();
+      const tl = analyzeFull();
       finishTimeline();
+      // 網頁版改過音符以後沒有預先算好的時間軸：把瀏覽器分析的結果存起來，下次打開就不必再分析
+      if (HOSTED && !keepPos && S.stamp) apiFetch(`/api/works/${S.slug}/timeline.json?stamp=${encodeURIComponent(S.stamp)}`, { method: "PUT", body: JSON.stringify(tl) }).catch(() => {});
       lap("analyze");
     }
     lt.source = source;
@@ -1381,7 +1432,7 @@
       measureFirstStep: firstStep, steps,
     };
   }
-  function analyzeFull() { restoreTimeline(analyzeOsmd(S.full.Sheet)); }
+  function analyzeFull() { const tl = analyzeOsmd(S.full.Sheet); restoreTimeline(tl); return tl; }
   function timelineDiff(a, b) {   // 只比對音符與時間（速度標記不影響游標位置）
     const out = [];
     if (a.nMeasures !== b.nMeasures) out.push(`小節數 ${a.nMeasures} ≠ ${b.nMeasures}`);
@@ -1424,7 +1475,7 @@
       S.cursorStep = -1; setCursor(S.measureFirstStep[m] ?? 0); drawOverlay();
       console.info("[timeline] 伺服器時間軸和 OSMD 不同，已改用 OSMD：", diff.detail);
     }
-    try { await fetch(`/api/works/${slug}/timeline.json?stamp=${encodeURIComponent(stamp)}`, { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify(chosen) }); } catch (e) { /* 下次再核對 */ }
+    try { await apiFetch(`/api/works/${slug}/timeline.json?stamp=${encodeURIComponent(stamp)}`, { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify(chosen) }); } catch (e) { /* 下次再核對 */ }
   }
   function buildSections() {
     const xmlM = xmlMeasures(0);
@@ -2060,7 +2111,7 @@
     try { localStorage.setItem(settingsKey(S.slug), JSON.stringify(st)); S.savedMeasure = st.posMeasure; } catch (e) { /* 空間滿或被擋：這次不記 */ }
     if (S.saveScore) {
       S.saveScore = false;
-      fetch(`/api/works/${S.slug}/score.musicxml`, { method: "PUT", headers: { "content-type": "application/xml" }, body: S.xmlText })
+      apiFetch(`/api/works/${S.slug}/score.musicxml`, { method: "PUT", headers: { "content-type": "application/xml" }, body: S.xmlText })
         .then((r) => { $("editStatus").textContent += r.ok ? "　已儲存" : "　儲存失敗"; }, () => { $("editStatus").textContent += "　儲存失敗"; });
     }
   }

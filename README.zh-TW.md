@@ -207,6 +207,16 @@ MSCZ 檔要先轉成 MusicXML：`mscore -o out.musicxml in.mscz`（MuseScore Stu
 - 畫面一次只排版一頁（翻頁模式 12–40 小節，視譜表數而定）或幾小塊（捲動模式）；每頁／每塊都是從整份譜切出來的小段，開頭帶上當時的調號、拍號、譜號，所以每塊第一行都會重畫譜號與聲部名稱。
 - 取樣音色本身有幾 cent 的走音（管風琴 +7、鋼琴 +10、慢弦 −2…），程式已依實測補正；純音則是數學上精確的 A=442。
 
+## 網頁版（靜態網站）
+
+不想讓別人連到你的電腦時，可以把程式放到靜態網站（例如 Cloudflare Pages）。網站上只有程式，沒有樂譜。
+
+1. 先用 agent 準備、檢查樂譜，再做成樂譜包：`uv run python check_import.py my-work.zip --export my-work-ready.zip`。
+2. 做網站：`uv run python build_static.py`，把 `dist/` 放上去（例如 `npx wrangler pages deploy dist`）。
+3. 使用者打開網站，把樂譜包拖進頁面。作品只存在那個瀏覽器裡。
+
+網頁版不轉換樂譜（不收 MusicXML／PDF，沒有匯入設定），可以修正音符：改過的譜原樣存在瀏覽器裡。詳見 [docs/HOSTING.md](docs/HOSTING.md)。
+
 ## 授權
 
 程式以 [AGPL-3.0-or-later](LICENSE) 授權，第三方元件見 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。這份授權只涵蓋軟體，不包含任何樂譜的權利。
@@ -220,13 +230,15 @@ align.py         （實驗）用掃描頁的小節號碼與多小節休止數字
 server.py        FastAPI：上傳、辨識進度、作品合併／寫回、設定
 check_import.py  試匯入：在暫時的資料夾裡匯入 ZIP 或樂譜檔，印出結果（不動你的資料）
 check_alignment.py  檢查各聲部是否逐小節對齊：小節數、拍號，以及強弱記號等是否錯開 1–2 小節
+export_ready.py  做「樂譜包」：合併譜＋時間軸＋匯入摘要的 ZIP，網頁版（靜態網站）直接匯入（check_import.py --export）
+build_static.py  做靜態網站（dist/）：沒有伺服器，作品存在每個瀏覽器的 IndexedDB；見 docs/HOSTING.md
 examples/        內建範例樂曲（授權允許自由散布；每個資料夾有 SOURCE.md）
 score_upload.py  網頁匯入總譜：保留上傳的 MusicXML／MXL／ZIP、算預設設定（或讀 sheet-practice.json）、呼叫 import_parts 匯入、重新匯入
 xmlsafe.py       所有 MusicXML 共用的 parser（樂譜檔不可信任：不展開實體、不讀外部檔案）
 omr.py           PDF → 頁面圖片 → homr → 合併多頁 → 清理（和弦裡的休止符、整小節休止）
 works.py         作品層：多分譜合併成多聲部 MusicXML、補齊小節、編輯後拆回各分譜；合併結果與時間軸依版本戳快取
 timeline.py      伺服器端算播放時間軸（每個音的起點、音高、時值、每小節速度），前端不必載入整份譜分析
-static/          前端（index.html / app.js / style.css）
+static/          前端（index.html / app.js / style.css；hosted.js = 靜態網站模式，用 IndexedDB 回答 /api/...）
 static/vendor/   OSMD、WebAudioFont 播放器與小提琴／中提琴／大提琴／低音提琴音色（離線可用）
 data/<分譜>/     每個分譜：source.pdf、pages/、score.musicxml、meta.json（作品、聲部、順序、授權、來源）、backups/
 data/_works/     每個作品的練習設定

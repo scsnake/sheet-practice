@@ -20,6 +20,9 @@ The user interface is in Traditional Chinese. [README.zh-TW.md](README.zh-TW.md)
 
 The app works offline after installation. It was built for desktop Chrome and iPad.
 
+You can also publish the app as a static site with no server. Each visitor imports ready packages in their own browser.
+See [docs/HOSTING.md](docs/HOSTING.md).
+
 ## Quick start
 
 You need Python 3.12 or later and [uv](https://docs.astral.sh/uv/).
@@ -57,6 +60,12 @@ You need Python 3.12 or later and [uv](https://docs.astral.sh/uv/).
    uv run python check_import.py my-work.zip
    ```
 
+4. For the hosted app, export a ready package. The local app can also import it:
+
+   ```sh
+   uv run python check_import.py my-work.zip --export my-work-ready.zip
+   ```
+
 ## Keep your scores outside the repo
 
 Set `SP_DATA_DIR` to use another data folder:
@@ -72,7 +81,7 @@ The command-line tools use the same setting.
 Warning: keep the server on `localhost` unless you trust the network.
 
 The server has no authentication. Anyone who can reach it can upload, change and delete scores.
-Do not put it on the public internet.
+Do not put it on the public internet. To share the app, publish the static site ([docs/HOSTING.md](docs/HOSTING.md)): it has no server API.
 
 ## Tests
 

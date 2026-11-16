@@ -25,6 +25,7 @@ Read `docs/SCORES.md` first. [docs/AGENT_SCORE_GUIDE.md](docs/AGENT_SCORE_GUIDE.
 8. Treat over-full bars and different bar counts as failures. Do not hide them.
 9. Tell the user about each problem and each warning from `prepare.py`.
 10. Tell the user about each alignment suspect and each "not checked" range (AGENT_SCORE_GUIDE.md, Step 7).
+11. If the user uses the hosted app, export a ready package (AGENT_SCORE_GUIDE.md, Step 8, and `docs/HOSTING.md`).
 
 Use a PDF and OMR only when no symbolic score exists. Tell the user that OMR needs manual correction.
 
@@ -37,6 +38,8 @@ Use a PDF and OMR only when no symbolic score exists. Tell the user that OMR nee
 | Run the app | `./run.sh`, then open <http://localhost:8777/> |
 | Check all works | `uv run python prepare.py` |
 | Check that the parts line up | `uv run python check_alignment.py <work-slug>` (`--list` shows the slugs) |
+| Export a ready package | `uv run python check_import.py my-work.zip --export my-work-ready.zip` |
+| Build the static site | `uv run python build_static.py` (writes `dist/`) |
 | Run e2e tests | `uv sync --group dev && uv run playwright install chromium && tests/run_e2e.sh` |
 
 Warning: do not add `--host 0.0.0.0` to `./run.sh` on a network that you do not trust.
@@ -47,4 +50,5 @@ The server has no authentication, and its API can change and delete scores.
 - Use `xmlsafe.PARSER` for all MusicXML. Scores come from the web, so treat them as untrusted.
 - Use `omr.DATA_DIR` for all data paths. `SP_DATA_DIR` sets its value.
 - Comments and UI text are in Traditional Chinese (zh-TW).
+- `static/hosted.js` answers the `/api/...` calls in hosted mode, from IndexedDB. A new API call in `app.js` must go through `apiFetch`, and needs a hosted answer or a hidden control.
 - The e2e tests use synthetic works and the bundled example in `examples/`. Do not add tests that need any other real score.

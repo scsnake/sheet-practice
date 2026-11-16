@@ -11,6 +11,7 @@ fi
 uv run --group dev python tests/test_reduce_orchestra.py || exit 2
 uv run --group dev python tests/test_score_upload.py || exit 2
 uv run --group dev python tests/test_check_alignment.py || exit 2
+uv run --group dev python tests/test_export_ready.py || exit 2
 uv run --group dev python check_import.py examples/haydn-op76-no3/*.mxl examples/haydn-op76-no3/sheet-practice.json > /dev/null || { echo "check_import.py failed on the example" >&2; exit 2; }
 SP_DATA_DIR=$(mktemp -d)
 export SP_DATA_DIR
